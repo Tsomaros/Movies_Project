@@ -3,3 +3,4 @@ python-dotenv>=1.0
 pandas>=2.1
 tqdm>=4.66
 kagglehub>=0.3
+pytest>=8

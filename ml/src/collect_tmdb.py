@@ -95,8 +95,10 @@ class TMDBClient:
         raise RuntimeError(f"Giving up on {path} after {MAX_RETRIES} attempts")
 
 
-def discover_ids(client: TMDBClient, start_year: int, end_year: int, per_year: int) -> list[int]:
-    """Most-voted movie IDs per release year, deduplicated, in order."""
+def discover_ids(
+    client: TMDBClient, start_year: int, end_year: int, per_year: int, sort_by: str = "vote_count.desc"
+) -> list[int]:
+    """Top movie IDs per release year (by `sort_by`), deduplicated, in order."""
     pages = -(-per_year // PAGE_SIZE)  # ceil division
     ids: list[int] = []
     seen: set[int] = set()
@@ -106,7 +108,7 @@ def discover_ids(client: TMDBClient, start_year: int, end_year: int, per_year: i
             data = client.get(
                 "/discover/movie",
                 primary_release_year=year,
-                sort_by="vote_count.desc",
+                sort_by=sort_by,
                 include_adult="false",
                 page=page,
             )
@@ -120,6 +122,12 @@ def discover_ids(client: TMDBClient, start_year: int, end_year: int, per_year: i
                 seen.add(movie_id)
                 ids.append(movie_id)
     return ids
+
+
+def merge_ids(existing: list[int], new: list[int]) -> list[int]:
+    """Existing IDs in their order, then the new ones not seen yet."""
+    seen = set(existing)
+    return existing + [i for i in dict.fromkeys(new) if i not in seen]
 
 
 def trim_credits(movie: dict) -> dict:
@@ -168,7 +176,10 @@ def main() -> None:
     parser.add_argument("--end-year", type=int, default=2025)
     parser.add_argument("--per-year", type=int, default=220, help="movies per release year")
     parser.add_argument("--limit", type=int, help="only fetch details for the first N IDs (smoke test)")
-    parser.add_argument("--refresh-ids", action="store_true", help="re-run discovery even if movie_ids.json exists")
+    parser.add_argument("--sort", default="vote_count.desc", choices=["vote_count.desc", "revenue.desc"],
+                        help="discovery order within each year")
+    parser.add_argument("--refresh-ids", action="store_true", help="re-run discovery and overwrite movie_ids.json")
+    parser.add_argument("--add-ids", action="store_true", help="re-run discovery and append new IDs to movie_ids.json")
     parser.add_argument("--rps", type=float, default=20.0, help="max requests per second")
     args = parser.parse_args()
 
@@ -176,13 +187,15 @@ def main() -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     client = TMDBClient(requests_per_second=args.rps)
 
-    if IDS_PATH.exists() and not args.refresh_ids:
-        ids = json.loads(IDS_PATH.read_text())
+    existing = json.loads(IDS_PATH.read_text()) if IDS_PATH.exists() else []
+    if existing and not (args.refresh_ids or args.add_ids):
+        ids = existing
         log.info("Loaded %d IDs from %s", len(ids), IDS_PATH.name)
     else:
-        ids = discover_ids(client, args.start_year, args.end_year, args.per_year)
+        found = discover_ids(client, args.start_year, args.end_year, args.per_year, args.sort)
+        ids = merge_ids(existing, found) if args.add_ids else found
         IDS_PATH.write_text(json.dumps(ids))
-        log.info("Discovered %d IDs -> %s", len(ids), IDS_PATH.name)
+        log.info("Discovered %d IDs (%s); %d IDs now in %s", len(found), args.sort, len(ids), IDS_PATH.name)
 
     if args.limit:
         ids = ids[: args.limit]
