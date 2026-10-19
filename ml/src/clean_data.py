@@ -178,6 +178,14 @@ def clean(tables: dict[str, pd.DataFrame], cpi: pd.Series, today: date | None = 
     placeholder = (m["budget"] == m["revenue"]).fillna(False).astype(bool)  # revenue copied from budget
     m.loc[placeholder, "revenue"] = pd.NA
     log.info("revenue: %d set to NULL (equal to budget, likely a placeholder)", int(placeholder.sum()))
+    # Same title + identical budget and revenue: the numbers were copied from the other film (e.g. a remake).
+    # Different titles sharing a pair are left alone; rounded figures make that common by coincidence.
+    with_both = m[m["budget"].notna() & m["revenue"].notna()].assign(
+        norm_title=lambda d: d["title"].str.lower().str.replace(r"[^\w]", "", regex=True))
+    with_both = with_both.sort_values("vote_count", ascending=False, key=lambda s: pd.to_numeric(s, errors="coerce"))
+    copied = with_both.index[with_both.duplicated(["norm_title", "budget", "revenue"])]  # most-voted film keeps them
+    m.loc[copied, ["budget", "revenue"]] = pd.NA
+    log.info("budget + revenue: %d set to NULL (copied from a same-titled film)", len(copied))
     m["runtime"] = pd.to_numeric(m["runtime"], errors="coerce").where(lambda r: r > 0)
 
     m["release_year"] = m["release_date"].dt.year
@@ -194,6 +202,8 @@ def clean(tables: dict[str, pd.DataFrame], cpi: pd.Series, today: date | None = 
     for name in CHILD_TABLES:
         df = tables[name]
         out[name] = df[df["movie_id"].isin(keep)].drop_duplicates().reset_index(drop=True)
+    out["companies"] = (out["companies"].sort_values(["movie_id", "company_order"])
+                        .drop_duplicates(["movie_id", "company_id"]).reset_index(drop=True))  # listed twice
     return out
 
 

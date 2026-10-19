@@ -10,8 +10,9 @@ from clean_data import clean, clean_amount, inflation_factor, load_cpi, merge_so
 TODAY = date(2026, 10, 19)
 
 
-def record(movie_id, title=None, release_date="2010-06-01", budget=10_000_000, revenue=50_000_000,
+def record(movie_id, title=None, release_date="2010-06-01", budget=10_000_000, revenue="default",
            status="Released", **extra):
+    revenue = 50_000_000 + movie_id if revenue == "default" else revenue  # distinct per film, not a copied pair
     return {
         "id": movie_id, "title": title or f"Movie {movie_id}", "release_date": release_date, "budget": budget, "revenue": revenue,
         "status": status, "runtime": 100, "genres": [{"id": 18, "name": "Drama"}],
@@ -41,6 +42,21 @@ def test_has_financials_needs_both_valid_amounts():
              record(5, budget=20_000_000, revenue=20_000_000)])["movies"].set_index("id")
     assert m["has_financials"].to_dict() == {1: 1, 2: 0, 3: 0, 4: 0, 5: 0}
     assert m.loc[5, "budget"] == 20_000_000 and pd.isna(m.loc[5, "revenue"])  # revenue == budget is a placeholder
+
+
+def test_copied_financials_kept_only_on_most_voted_film():
+    pair = {"budget": 35_000_000, "revenue": 117_270_765}
+    m = run([record(1, "Dennis the Menace", "1987-09-18", vote_count=40, **pair),
+             record(2, "Dennis the Menace", "1993-06-09", vote_count=900, **pair),
+             record(3, "Another Film", **pair)])["movies"].set_index("id")  # different title: coincidence, kept
+    assert m["has_financials"].to_dict() == {1: 0, 2: 1, 3: 1}
+    assert pd.isna(m.loc[1, "budget"]) and pd.isna(m.loc[1, "revenue"])
+
+
+def test_company_listed_twice_keeps_one_row():
+    companies = [{"id": 5, "name": "Studio"}, {"id": 6, "name": "Other"}, {"id": 5, "name": "Studio"}]
+    c = run([record(1, production_companies=companies)])["companies"]
+    assert c[["company_id", "company_order"]].values.tolist() == [[5, 0], [6, 1]]
 
 
 def test_movies_without_financials_are_kept_for_browsing():

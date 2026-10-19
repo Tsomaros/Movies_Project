@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection) and Day 2 (cleaning → SQLite) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite) and Day 3 (feature engineering) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -17,6 +17,7 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/collect_tmdb.py --add-ids --sort vote_count.desc --per-year 500
 .venv/Scripts/python ml/src/check_kaggle.py              # download (if missing) + summarize the Kaggle fallback CSVs
 .venv/Scripts/python ml/src/clean_data.py                # clean both sources -> ml/data/movies.db (rebuilt each run)
+.venv/Scripts/python ml/src/features.py                  # features for trainable rows -> ml/data/features.csv (git-ignored)
 .venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
@@ -33,6 +34,12 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 
 - `movies.db` (git-ignored), built by `clean_data.py`. Tables: `movies`, `genres`, `companies`, `cast_members` (top 10), `crew` (key jobs). The TMDB API wins over Kaggle; Kaggle only adds ids missing from the pull. Every movie is kept for browsing, and **training must filter on `has_financials = 1`**: budget and revenue both ≥ $5,000, with smaller values stored as NULL. Revenue is also set to NULL when it equals the budget, which is likely a placeholder. `budget_adj`/`revenue_adj` are in 2024 dollars.
 - `cpi_us.csv` (committed): annual US CPI-U, 1916–2024, used for the inflation adjustment. Years after 2024 use a factor of 1.0.
+
+## Features (`ml/src/features.py`)
+
+- `build_features(load_history())` returns one row per trainable movie: `META` columns, the features, and the `TARGETS` (`y_log_revenue`, `y_score`, `y_log_budget`). `feature_columns(df)` gives the model inputs and fails if any leaky column is present.
+- Training-year state, such as the genre list, the top-10 languages and the overview TF-IDF+SVD topics, is fit on years ≤ 2015 only and held in a `FeatureSpec`. That spec must be reused for validation, test and `predict()`.
+- `track_record()` builds the director, top-3 actor and lead-company stats from **all** films in the DB released strictly before the target. Revenue stats use only prior films with financials, and prior scores use only films with ≥ 50 votes. Unknown entities get `n_prior = 0` and NaN stats. A target doesn't need to exist in the DB, so `predict()` can pass a new film.
 
 ## What the app does
 
