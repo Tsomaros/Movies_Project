@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering) and Day 4 (time split, baselines, metrics) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics) and Day 5 (LightGBM revenue and score models) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -19,6 +19,7 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/clean_data.py                # clean both sources -> ml/data/movies.db (rebuilt each run)
 .venv/Scripts/python ml/src/features.py                  # features for trainable rows -> ml/data/features.csv (git-ignored)
 .venv/Scripts/python ml/src/baselines.py                 # baselines on the time split -> ml/reports/baselines.csv (committed)
+.venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv + metrics.md (committed)
 .venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
@@ -47,6 +48,21 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 
 - Every model is fit on train only and scored with `evaluate.score()`: MAE, RMSE and R² on the log scale (score scale for `y_score`), plus `mdape` (median absolute % error in dollars) for revenue and budget, and `coverage` / `width` for 10–90% ranges (target coverage 80%).
 - Baselines to beat: global median, median per genre (mean of a film's genre medians), and for revenue a straight line in log-budget. Their ranges come from train residual quantiles. Results are in `ml/reports/baselines.csv`.
+
+## Models (`ml/src/train.py`)
+
+- `RangeModel` is three LightGBM regressors on the same features:
+  - an L2 model for the point prediction
+  - q10 and q90 quantile models for the range
+  - Crossed quantiles are sorted, and the point is clipped into the range.
+  - `fit(..., calibrate=True)` widens the range by `margin`, the conformal (CQR) margin that makes 80% of valid films fall inside.
+- `MODELS` maps (target, name) to the feature columns that model leaves out:
+  - revenue `lgbm` uses `log_budget_adj`
+  - revenue `lgbm_no_budget` leaves the budget out, because the creator's budget is optional
+  - the score `lgbm` never uses the budget
+- `PARAMS` are fixed. Valid (2016–18) is used only for early stopping, which picks the number of trees, and for the range calibration. Test (2019+) is never used in training, tuning or calibration.
+- `main()` writes `ml/reports/models.csv`, with the baselines next to the models, and `ml/reports/metrics.md` (valid and test, in markdown). The README's results table is copied from it by hand.
+- Models aren't saved yet; joblib is Day 7.
 
 ## What the app does
 
