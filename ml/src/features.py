@@ -29,9 +29,10 @@ FEATURES_PATH = ROOT / "ml" / "data" / "features.csv"
 
 TRAIN_END_YEAR = 2015  # train <= 2015, validate 2016-2018, test >= 2019
 VALID_END_YEAR = 2018
+MIN_TARGET_YEAR = 1980  # older films are history for track records, not training rows
 TOP_LANGUAGES = 10
 TOP_BILLED = 3
-MIN_SCORE_VOTES = 50  # prior films with fewer votes don't count towards a prior score
+MIN_SCORE_VOTES = 50  # films with fewer votes don't have a usable score (neither as prior nor as target)
 N_TOPICS = 20
 
 FORBIDDEN = {"popularity", "vote_count", "vote_average"}  # known only after release
@@ -44,6 +45,16 @@ log = logging.getLogger("features")
 def split_of(years: pd.Series) -> pd.Series:
     return pd.Series(np.select([years <= TRAIN_END_YEAR, years <= VALID_END_YEAR], ["train", "valid"], "test"),
                      index=years.index)
+
+
+def split_frames(df: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """The time split: {"train": ..., "valid": ..., "test": ...}."""
+    return {name: df[df["split"] == name] for name in ["train", "valid", "test"]}
+
+
+def target_rows(df: pd.DataFrame, target: str) -> pd.DataFrame:
+    """Rows that have this target (y_score is missing for films with too few votes)."""
+    return df[df[target].notna()]
 
 
 def slug(name: str) -> str:
@@ -200,10 +211,13 @@ def feature_columns(df: pd.DataFrame) -> list[str]:
 
 def build_features(history: dict[str, pd.DataFrame], spec: FeatureSpec | None = None,
                    ids=None) -> tuple[pd.DataFrame, FeatureSpec]:
-    """Features + targets for `ids` (default: every movie with financials)."""
+    """Features + targets for `ids` (default: every movie with financials from MIN_TARGET_YEAR on)."""
     movies = history["movies"]
     spec = spec or fit_spec(history)
-    targets = movies[movies["id"].isin(ids)] if ids is not None else movies[movies["has_financials"] == 1]
+    if ids is not None:
+        targets = movies[movies["id"].isin(ids)]
+    else:
+        targets = movies[(movies["has_financials"] == 1) & (movies["release_year"] >= MIN_TARGET_YEAR)]
 
     X = base_features(targets, history, spec)
     X = X.join(track_record_features(history, X.index))
@@ -213,7 +227,7 @@ def build_features(history: dict[str, pd.DataFrame], spec: FeatureSpec | None = 
     meta = pd.DataFrame({"title": t["title"], "release_date": t["release_date"], "split": split_of(t["release_year"])})
     y = pd.DataFrame({
         "y_log_revenue": np.log1p(t["revenue_adj"].astype(float)),
-        "y_score": t["vote_average"].astype(float),
+        "y_score": t["vote_average"].where(t["vote_count"] >= MIN_SCORE_VOTES).astype(float),
         "y_log_budget": np.log1p(t["budget_adj"].astype(float)),
     })
     df = meta.join(X).join(y).rename_axis("id").reset_index()
@@ -224,6 +238,7 @@ def summarize(df: pd.DataFrame) -> None:
     print(f"Rows: {len(df):,}, feature columns: {len(feature_columns(df))}")
     by_split = df.groupby("split", sort=False).agg(
         rows=("id", "size"),
+        score_rows=("y_score", "count"),
         unknown_director=("director_n_prior", lambda s: f"{(s == 0).mean():.0%}"),
         unknown_all_actors=("actor_n_prior_max", lambda s: f"{(s == 0).mean():.0%}"),
         unknown_company=("company_n_prior", lambda s: f"{(s == 0).mean():.0%}"),

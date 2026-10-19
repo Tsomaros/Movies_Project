@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite) and Day 3 (feature engineering) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering) and Day 4 (time split, baselines, metrics) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -18,6 +18,7 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/check_kaggle.py              # download (if missing) + summarize the Kaggle fallback CSVs
 .venv/Scripts/python ml/src/clean_data.py                # clean both sources -> ml/data/movies.db (rebuilt each run)
 .venv/Scripts/python ml/src/features.py                  # features for trainable rows -> ml/data/features.csv (git-ignored)
+.venv/Scripts/python ml/src/baselines.py                 # baselines on the time split -> ml/reports/baselines.csv (committed)
 .venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
@@ -40,6 +41,12 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 - `build_features(load_history())` returns one row per trainable movie: `META` columns, the features, and the `TARGETS` (`y_log_revenue`, `y_score`, `y_log_budget`). `feature_columns(df)` gives the model inputs and fails if any leaky column is present.
 - Training-year state, such as the genre list, the top-10 languages and the overview TF-IDF+SVD topics, is fit on years ≤ 2015 only and held in a `FeatureSpec`. That spec must be reused for validation, test and `predict()`.
 - `track_record()` builds the director, top-3 actor and lead-company stats from **all** films in the DB released strictly before the target. Revenue stats use only prior films with financials, and prior scores use only films with ≥ 50 votes. Unknown entities get `n_prior = 0` and NaN stats. A target doesn't need to exist in the DB, so `predict()` can pass a new film.
+- Training rows are films with financials from 1980 on (`MIN_TARGET_YEAR`); older films are only history for track records. `y_score` is NaN for films with fewer than 50 votes, so select rows per target with `target_rows(df, target)`. `split_frames(df)` gives train/valid/test.
+
+## Evaluation (`ml/src/evaluate.py`, `ml/src/baselines.py`)
+
+- Every model is fit on train only and scored with `evaluate.score()`: MAE, RMSE and R² on the log scale (score scale for `y_score`), plus `mdape` (median absolute % error in dollars) for revenue and budget, and `coverage` / `width` for 10–90% ranges (target coverage 80%).
+- Baselines to beat: global median, median per genre (mean of a film's genre medians), and for revenue a straight line in log-budget. Their ranges come from train residual quantiles. Results are in `ml/reports/baselines.csv`.
 
 ## What the app does
 

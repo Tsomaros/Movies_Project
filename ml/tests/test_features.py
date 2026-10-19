@@ -122,6 +122,18 @@ def test_overview_encoder_fits_on_train_years_only():
     assert "zombie" not in vocab(h1)
 
 
+def test_score_target_needs_enough_votes():
+    df = features(*BACKGROUND, film(1, vote_average=0.0, vote_count=0), film(2, vote_average=7.5, vote_count=50))
+    assert np.isnan(df.loc[1, "y_score"]) and df.loc[2, "y_score"] == 7.5
+    assert not np.isnan(df.loc[1, "y_log_revenue"])  # still a revenue/budget training row
+
+
+def test_pre_1980_films_are_history_not_targets():
+    df = features(*BACKGROUND, film(1, "1975-01-01", director=7), film(2, "2010-01-01", director=7))
+    assert 1 not in df.index
+    assert df.loc[2, "director_n_prior"] == 1
+
+
 def test_empty_overview_gives_zero_topics():
     df = features(*BACKGROUND, film(1, overview=""))
     assert df.loc[1, ["ov_0", "ov_1", "overview_words"]].tolist() == [0, 0, 0]
