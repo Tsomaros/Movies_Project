@@ -48,7 +48,10 @@ Score is TMDB's 0–10 vote average, for films with at least 50 votes. The full 
 
 - **Calibration.** Each LightGBM range comes from 10% and 90% quantile models. It's then widened by a single margin, chosen so that 80% of valid films fall inside; this method is conformalized quantile regression. Without calibration, test coverage was 72% for revenue and 71% for score.
 - **Range width.** The calibrated ranges are still narrower than the baselines': a median width of 3.43 vs 3.87 on log-revenue, and 1.54 vs 1.87 on score.
-- **Test years.** All models do worse on the test years than on valid, likely in part because of the 2020–21 cinema closures. As a result, test coverage is still a few points below 80%.
+- **Test years.** All models do worse on the test years than on valid, and test coverage is a few points below 80%. The per-year breakdown is in `ml/reports/coverage_by_year.csv`.
+  - **Revenue:** most of the gap is the 2020–21 cinema closures. Coverage drops to 65% (2020) and 68% (2021), because about 30% of those films earned less than their range. Without 2020–21, coverage is 78% with budget and 77% without.
+  - **Score:** the gap is steady drift. In every test year, 14–18% of films score above their range, compared with 11.5% on valid. Recent films score higher than the training years predict.
+  - The ranges were not re-tuned on the test years, which would make these numbers dishonest. The app's saved models (Day 7) will instead be refit and calibrated on the most recent years.
 
 ## Limitations
 

@@ -2,7 +2,8 @@ import numpy as np
 import pandas as pd
 
 from features import FORBIDDEN
-from train import MODELS, RangeModel, evaluate_models, features_for, markdown_table
+from train import (MODELS, RangeModel, coverage_by_year, coverage_excluding, evaluate_models, features_for,
+                   markdown_table)
 
 FAST = dict(n_estimators=60, learning_rate=0.1, min_child_samples=5, n_jobs=1)
 
@@ -79,6 +80,22 @@ def test_missing_scores_are_skipped():
     df.loc[df.index[:50], "y_score"] = np.nan
     table, _ = evaluate_models(df, **FAST)
     assert table.loc[("y_score", "lgbm", "train"), "n"] == 250
+
+
+def test_coverage_by_year_adds_up_to_the_test_coverage():
+    df = frame()
+    test = df["split"] == "test"
+    df.loc[test, "release_date"] = [f"{2019 + i % 4}-06-01" for i in range(test.sum())]
+    table, fitted = evaluate_models(df, **FAST)
+    by_year = coverage_by_year(fitted, df)
+    for key in MODELS:
+        part = by_year.loc[key]
+        assert list(part.index) == [2019, 2020, 2021, 2022]
+        np.testing.assert_allclose(part["coverage"] + part["below"] + part["above"], 1)
+        overall = np.average(part["coverage"], weights=part["n"])
+        assert np.isclose(overall, table.loc[(*key, "test"), "coverage"])
+        kept = part.drop([2020, 2021])
+        assert np.isclose(coverage_excluding(by_year)[key], np.average(kept["coverage"], weights=kept["n"]))
 
 
 def test_markdown_table_has_valid_and_test_only():

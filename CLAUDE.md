@@ -19,7 +19,7 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/clean_data.py                # clean both sources -> ml/data/movies.db (rebuilt each run)
 .venv/Scripts/python ml/src/features.py                  # features for trainable rows -> ml/data/features.csv (git-ignored)
 .venv/Scripts/python ml/src/baselines.py                 # baselines on the time split -> ml/reports/baselines.csv (committed)
-.venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv + metrics.md (committed)
+.venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv, coverage_by_year.csv, metrics.md (committed)
 .venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
@@ -62,7 +62,8 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
   - the score `lgbm` never uses the budget
 - `PARAMS` are fixed. Valid (2016–18) is used only for early stopping, which picks the number of trees, and for the range calibration. Test (2019+) is never used in training, tuning or calibration.
 - `main()` writes `ml/reports/models.csv`, with the baselines next to the models, and `ml/reports/metrics.md` (valid and test, in markdown). The README's results table is copied from it by hand.
-- Models aren't saved yet; joblib is Day 7.
+- `main()` also writes `ml/reports/coverage_by_year.csv`, test coverage per release year with the share of films below and above the range. `metrics.md` adds coverage without 2020–21 (`SHOCK_YEARS`, the cinema closures). These years are only reported, never used to tune anything.
+- Models aren't saved yet; joblib is Day 7. Plan for the saved models: same `PARAMS`, fit on films up to 2023, with early stopping and range calibration on 2024–25, so live ranges reflect recent drift. The README's numbers stay the Day 5 split.
 
 ## What the app does
 

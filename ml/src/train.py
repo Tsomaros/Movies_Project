@@ -12,7 +12,7 @@ Revenue gets two models because the creator's budget is optional: `lgbm` uses
 the budget, `lgbm_no_budget` does not. The score model never uses the budget.
 
 Usage:
-    python ml/src/train.py      # prints the table, writes ml/reports/models.csv and ml/reports/metrics.md
+    python ml/src/train.py      # prints the table, writes ml/reports/models.csv, coverage_by_year.csv and metrics.md
 """
 
 import argparse
@@ -29,6 +29,8 @@ from features import build_features, feature_columns, load_history, split_frames
 REPORTS = BASELINES_PATH.parent
 MODELS_PATH = REPORTS / "models.csv"
 METRICS_MD_PATH = REPORTS / "metrics.md"
+COVERAGE_PATH = REPORTS / "coverage_by_year.csv"
+SHOCK_YEARS = (2020, 2021)  # cinema closures; reported separately, never used to tune anything
 
 # Fixed, modest settings; only the number of trees is chosen (by early stopping on valid).
 PARAMS = dict(learning_rate=0.03, n_estimators=2000, num_leaves=15, min_child_samples=30, subsample=0.8,
@@ -114,6 +116,29 @@ def evaluate_models(df: pd.DataFrame, **params) -> tuple[pd.DataFrame, dict]:
     return metrics_table(results), fitted
 
 
+def coverage_by_year(fitted: dict, df: pd.DataFrame, split: str = "test") -> pd.DataFrame:
+    """Range coverage per release year, with the share of films falling below and above the range."""
+    rows = []
+    for (target, name), model in fitted.items():
+        frame = target_rows(split_frames(df)[split], target)
+        _, lo, hi = model.predict(frame)
+        y = frame[target].to_numpy(float)
+        years = pd.to_datetime(frame["release_date"]).dt.year.to_numpy()
+        for year in np.unique(years):
+            at = years == year
+            rows.append({"target": target, "model": name, "year": int(year), "n": int(at.sum()),
+                         "coverage": np.mean((y[at] >= lo[at]) & (y[at] <= hi[at])),
+                         "below": np.mean(y[at] < lo[at]), "above": np.mean(y[at] > hi[at])})
+    return pd.DataFrame(rows).set_index(["target", "model", "year"])
+
+
+def coverage_excluding(by_year: pd.DataFrame, years=SHOCK_YEARS) -> pd.Series:
+    """Overall coverage per model, leaving out `years`."""
+    kept = by_year[~by_year.index.get_level_values("year").isin(years)]
+    hits = (kept["coverage"] * kept["n"]).groupby(level=["target", "model"], sort=False).sum()
+    return hits / kept["n"].groupby(level=["target", "model"], sort=False).sum()
+
+
 def markdown_table(table: pd.DataFrame, splits=("valid", "test")) -> str:
     """Valid and test rows per target as markdown, ready for the README."""
     fmt = {"n": "{:.0f}", "mae": "{:.3f}", "r2": "{:.3f}", "mdape": "{:.0%}", "coverage": "{:.0%}", "width": "{:.2f}"}
@@ -140,11 +165,20 @@ def main() -> None:
     targets = models.index.get_level_values("target").unique()
     table = pd.concat([part.xs(t, level="target", drop_level=False)  # baselines, then models, per target
                        for t in targets for part in (baselines, models)])
+    by_year = coverage_by_year(fitted, df)
+    excluded = coverage_excluding(by_year)
+    shock = ", ".join(map(str, SHOCK_YEARS))
+    note = [f"**Test range coverage without {shock}**", ""] + [
+        f"- {target} / {name}: {cov:.0%}" for (target, name), cov in excluded.items()] + [""]
     table.to_csv(MODELS_PATH, float_format="%.4f")
-    METRICS_MD_PATH.write_text(markdown_table(table), encoding="utf-8")
-    log.info("Wrote %s and %s", MODELS_PATH, METRICS_MD_PATH)
+    by_year.to_csv(COVERAGE_PATH, float_format="%.4f")
+    METRICS_MD_PATH.write_text(markdown_table(table) + "\n".join(note), encoding="utf-8")
+    log.info("Wrote %s, %s and %s", MODELS_PATH, COVERAGE_PATH, METRICS_MD_PATH)
 
     print_table(table)
+    print("\nTest range coverage by release year:")
+    print(by_year.round(2).to_string())
+    print("\n" + "\n".join(note))
     for (target, name), model in fitted.items():
         trees = [m.best_iteration_ for m in (model.point, model.lo, model.hi)]
         print(f"\n{target} / {name}: trees (point, q10, q90) = {trees}, range margin = {model.margin:+.3f}; "
