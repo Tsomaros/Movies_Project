@@ -172,7 +172,7 @@ def main() -> None:
         f"- {target} / {name}: {cov:.0%}" for (target, name), cov in excluded.items()] + [""]
     table.to_csv(MODELS_PATH, float_format="%.4f")
     by_year.to_csv(COVERAGE_PATH, float_format="%.4f")
-    METRICS_MD_PATH.write_text(markdown_table(table) + "\n".join(note), encoding="utf-8")
+    METRICS_MD_PATH.write_text(markdown_table(table) + "\n" + "\n".join(note), encoding="utf-8")
     log.info("Wrote %s, %s and %s", MODELS_PATH, COVERAGE_PATH, METRICS_MD_PATH)
 
     print_table(table)

@@ -23,6 +23,7 @@
 | genre_median | test | 1384 | 0.617 | -0.062 | 77% | 1.87 |
 | lgbm | valid | 875 | 0.493 | 0.343 | 80% | 1.55 |
 | lgbm | test | 1384 | 0.529 | 0.199 | 77% | 1.54 |
+
 **Test range coverage without 2020, 2021**
 
 - y_log_revenue / lgbm: 78%
