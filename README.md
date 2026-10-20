@@ -20,7 +20,14 @@ _TODO_
 
 ## How to run
 
-_TODO_
+The full guide comes with the final docs. For now, after building the database (`ml/src/clean_data.py`) and the models (`ml/src/train.py`), start the API:
+
+```bash
+.venv/Scripts/python -m pip install -r backend/requirements.txt
+.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend
+```
+
+The interactive API docs are at http://127.0.0.1:8000/docs. The endpoints are listed in [backend/README.md](backend/README.md).
 
 ## Evaluation results
 

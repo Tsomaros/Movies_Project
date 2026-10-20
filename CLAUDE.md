@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model) and Day 7 (SHAP explanations, saved models, `predict()`) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model), Day 7 (SHAP explanations, saved models, `predict()`) and Day 8 (FastAPI backend) are in place. `frontend/` is a placeholder until Day 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -21,7 +21,9 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/baselines.py                 # baselines on the time split -> ml/reports/baselines.csv (committed)
 .venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv, coverage_by_year.csv, importance.csv, metrics.md (committed) + ml/models/predictor.joblib (git-ignored)
 .venv/Scripts/python ml/src/predict.py                   # example prediction from the saved models
-.venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
+.venv/Scripts/python -m pip install -r backend/requirements.txt                              # API deps (includes ml/requirements.txt)
+.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend                      # API on :8000, docs at /docs
+.venv/Scripts/python -m pytest ml/tests backend/tests -q  # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
 Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN` or `TMDB_API_KEY` for TMDB. `KAGGLE_USERNAME` + `KAGGLE_KEY` are optional; the public Kaggle dataset downloads anonymously.
@@ -78,6 +80,15 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 - Revenue uses `lgbm` when a budget is given and `lgbm_no_budget` otherwise. The budget's `label` is "rough estimate" when `budget_rough` is set, and a given budget is echoed as `given`.
 - A call takes about 0.75 s on the full DB, mostly the history copy and track records.
 
+## Backend (`backend/app/`)
+
+- `app/__init__.py` puts `ml/src` on `sys.path`, so the API imports `predict`/`features` directly and the bundle unpickles as `train.RangeModel`. No ML code is copied.
+- `create_app(settings)` loads the `Catalog` and one `Predictor` (bundle + history) at startup. `config.py` reads `MOVIES_DB`, `MODEL_PATH` and `CORS_ORIGINS` (comma-separated, default `http://localhost:5173`).
+- `/predict` is a sync endpoint, so it runs in the thread pool. Genres are checked against the bundle's `spec.genres`, and `ValueError`s become 422s. The response adds `warnings` (`warnings_for`): no known director, actors or company, some of them unknown, a year after the last valid year, or a language outside `spec.languages`.
+- `catalog.py` holds the browse and name-search SQL: read-only connections, parameterized queries, `LIKE` with `%`/`_` escaped. `GET /movies` sorts by `vote_count` by default, because Kaggle-only rows carry 2017 popularity values and no posters. Sorting by `vote_average` needs ≥ 50 votes. The name search (`/people?role=director|actor`, `/companies`) ranks by number of films and uses `NOT INDEXED`, which is about 25× faster than walking the id index.
+- Endpoints: `GET /health`, `POST /predict`, `GET /movies`, `GET /movies/{id}`, `GET /meta/genres`, `GET /meta/languages`, `GET /people`, `GET /companies`.
+- `backend/tests/conftest.py` builds a synthetic DB (with `clean_data.write_sqlite`) and a FAST `fit_live` bundle, reusing `ml/tests` helpers, so the API tests need neither the real data nor the trained models.
+
 ## What the app does
 
 A full-stack app with two audiences:
@@ -96,7 +107,7 @@ Stack: Python, scikit-learn/LightGBM, FastAPI, Pydantic, SQLite, React (Vite) wi
 
 Data flow: TMDB/Kaggle → cleaning → SQLite → feature pipeline → LightGBM models saved with joblib → a single `predict()` function → FastAPI `POST /predict` → React results page.
 
-Planned API: `POST /predict`, `GET /movies` (search, filter, paginate), `GET /movies/{id}`, `GET /meta/genres`.
+API (Day 8): `POST /predict`, `GET /movies` (search, filter, paginate), `GET /movies/{id}`, `GET /meta/genres`, plus `/meta/languages`, `/people`, `/companies` (the form's autocomplete) and `/health`.
 
 ## ML rules that must hold
 
