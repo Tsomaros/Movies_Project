@@ -28,6 +28,14 @@ The full guide comes with the final docs. For now, after building the database (
 
 The interactive API docs are at http://127.0.0.1:8000/docs. The endpoints are listed in [backend/README.md](backend/README.md).
 
+Then start the frontend in a second terminal (Node 22 LTS) and open http://localhost:5173:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
 ## Evaluation results
 
 Results so far (Day 7). The split is by release year:
