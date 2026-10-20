@@ -7,13 +7,15 @@ export default function SinglePicker({ label, placeholder, search, value, onChan
     return (
       <div className="field">
         <span className="label">{label}</span>
-        <div className="chips"><Chip onRemove={() => onChange(null)}>{value.name}</Chip></div>
+        <div className="chips">
+          <Chip onRemove={() => onChange(null)}>{value.name}{value.newcomer ? ' (newcomer)' : ''}</Chip>
+        </div>
       </div>
     )
   }
   return (
     <div className="field">
-      <Autocomplete label={label} placeholder={placeholder} search={search} onSelect={onChange} />
+      <Autocomplete label={label} placeholder={placeholder} search={search} onSelect={onChange} allowNewcomer />
     </div>
   )
 }

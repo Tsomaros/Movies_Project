@@ -1,5 +1,6 @@
 import { direction, driverSentence } from '../explain.js'
 import { dollars, ratio, score } from '../format.js'
+import Compare from './Compare.jsx'
 import Limitations from './Limitations.jsx'
 import RangeChart from './RangeChart.jsx'
 
@@ -84,10 +85,11 @@ function scoreCard(r) {
 }
 
 function PriorFilms({ film, prior }) {
+  const count = (n) => (n ? String(n) : 'none, a newcomer')
   const parts = [
-    film.director && `${film.director.name}: ${prior.director}`,
-    film.actors.length > 0 && `best-known lead actor: ${prior.actors_max}`,
-    film.company && `${film.company.name}: ${prior.company}`,
+    film.director && `${film.director.name}: ${count(prior.director)}`,
+    film.actors.length > 0 && `best-known lead actor: ${prior.actors_max || 'none, all newcomers'}`,
+    film.company && `${film.company.name}: ${count(prior.company)}`,
   ].filter(Boolean)
   if (!parts.length) {
     return (
@@ -97,11 +99,18 @@ function PriorFilms({ film, prior }) {
       </p>
     )
   }
-  return <p className="hint">Earlier films in our data, {parts.join(', ')}.</p>
+  const newcomers = [film.director, ...film.actors, film.company].filter((x) => x?.newcomer).map((x) => x.name)
+  return (
+    <p className="hint">
+      Earlier films in our data, {parts.join(', ')}.
+      {newcomers.length > 0 && ` Added as newcomers with no earlier films: ${newcomers.join(', ')}.`}
+    </p>
+  )
 }
 
-// The /predict response as ranges, charts and plain-English factors. `film` is the form as it was submitted.
-export default function Results({ result, film, headingRef }) {
+// The /predict response as ranges, charts and plain-English factors. `film` is the form as it was submitted
+// for the wording, `form` the raw form for the compare panel; `busy` dims them while a new prediction runs.
+export default function Results({ result, film, form, meta, onKeep, busy, headingRef }) {
   const prior = result.prior_films
   const cards = [
     { kind: 'budget', title: 'Budget', ...budgetCard(result.budget) },
@@ -109,7 +118,7 @@ export default function Results({ result, film, headingRef }) {
     { kind: 'score', title: 'Audience score', ...scoreCard(result.score) },
   ]
   return (
-    <section className="results" aria-live="polite">
+    <section className={busy ? 'results busy' : 'results'} aria-busy={busy}>
       <h2 ref={headingRef} tabIndex={-1}>Prediction</h2>
       {result.warnings.length > 0 && (
         <ul className="warnings">
@@ -120,6 +129,7 @@ export default function Results({ result, film, headingRef }) {
         <Card key={c.kind} {...c} r={result[c.kind]} tag={result[c.kind].label} film={film} prior={prior} />
       ))}
       <PriorFilms film={film} prior={prior} />
+      <Compare form={form} result={result} meta={meta} onKeep={onKeep} />
       <Limitations />
     </section>
   )

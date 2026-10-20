@@ -14,13 +14,14 @@ export default function ActorPicker({ search, value, onChange }) {
         search={search}
         exclude={value.map((a) => a.id)}
         disabled={full}
+        allowNewcomer
         onSelect={(actor) => onChange([...value, actor])}
       />
       {value.length > 0 && (
         <div className="chips">
           {value.map((a, i) => (
             <Chip key={a.id} onRemove={() => onChange(value.filter((x) => x.id !== a.id))}>
-              {`${i + 1}. ${a.name}`}
+              {`${i + 1}. ${a.name}${a.newcomer ? ' (newcomer)' : ''}`}
             </Chip>
           ))}
         </div>

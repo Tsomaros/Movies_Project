@@ -6,7 +6,11 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PredictRequest(BaseModel):
-    """What a creator enters. People and the company are TMDB ids, found with /people and /companies."""
+    """What a creator enters. People and the company are TMDB ids, found with /people and /companies.
+
+    An id not in our data counts as a newcomer with no earlier films. TMDB ids are positive, so the app sends
+    negative ids for newcomers the creator names.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
@@ -14,9 +18,10 @@ class PredictRequest(BaseModel):
     runtime: int = Field(ge=40, le=300, description="Minutes")
     release_date: date
     original_language: str = Field("en", pattern=r"^[a-z]{2}$", description="ISO 639-1 code")
-    company_id: int | None = Field(None, description="Lead production company")
-    director_id: int | None = None
-    actor_ids: list[int] = Field(default_factory=list, max_length=3, description="Top billed first")
+    company_id: int | None = Field(None, description="Lead production company; an unknown id is a newcomer")
+    director_id: int | None = Field(None, description="An unknown id (for example a negative one) is a newcomer")
+    actor_ids: list[int] = Field(default_factory=list, max_length=3,
+                                 description="Top billed first; unknown ids (for example negative ones) are newcomers")
     budget: float | None = Field(None, gt=0, le=2e9, description="US dollars, today's prices")
     overview: str = Field("", max_length=1000)
 

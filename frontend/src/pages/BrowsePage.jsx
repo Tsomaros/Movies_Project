@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useSearchParams } from 'react-router-dom'
 
 import { get } from '../api.js'
+import { ErrorMessage } from '../components/Status.jsx'
 
 const PAGE_SIZE = 24
 const YEARS = [1900, 2100] // the API's limits
@@ -28,11 +29,30 @@ function MovieCard({ movie, from }) {
   )
 }
 
+// Grey placeholder cards for the first load, so the page doesn't jump when the posters arrive.
+function SkeletonGrid() {
+  return (
+    <div role="status" aria-label="Loading movies">
+      <p className="muted result-count">Loading…</p>
+      <ul className="movie-grid" aria-hidden="true">
+        {Array.from({ length: 12 }, (_, i) => (
+          <li key={i} className="movie-card skeleton">
+            <span className="poster" />
+            <span className="skeleton-line" />
+            <span className="skeleton-line short" />
+          </li>
+        ))}
+      </ul>
+    </div>
+  )
+}
+
 // The filters live in the URL, so reload, back/forward and shared links keep them.
 export default function BrowsePage() {
   const [params, setParams] = useSearchParams()
   const location = useLocation()
-  const [genres, setGenres] = useState([])
+  const [genres, setGenres] = useState({ list: [], error: false })
+  const [attempt, setAttempt] = useState(0) // "Try again" bumps it to fetch again
   const q = params.get('q') ?? ''
   const genre = params.get('genre') ?? ''
   const yearFrom = params.get('from') ?? ''
@@ -57,8 +77,9 @@ export default function BrowsePage() {
   }
 
   useEffect(() => {
-    get('/meta/genres').then(setGenres).catch(() => setGenres([]))
-  }, [])
+    get('/meta/genres').then((list) => setGenres({ list, error: false }))
+      .catch(() => setGenres({ list: [], error: true }))
+  }, [attempt])
 
   // Back/forward changes the URL; keep the typed fields in step with it.
   useEffect(() => setDraft({ q, from: yearFrom, to: yearTo }), [q, yearFrom, yearTo])
@@ -88,7 +109,7 @@ export default function BrowsePage() {
         if (e.name !== 'AbortError') setState({ data: null, error: e.message, loading: false })
       })
     return () => controller.abort()
-  }, [q, genre, yearFrom, yearTo, page])
+  }, [q, genre, yearFrom, yearTo, page, attempt])
 
   function goTo(p) {
     setParams((prev) => {
@@ -121,8 +142,9 @@ export default function BrowsePage() {
           <label htmlFor="browse-genre">Genre</label>
           <select id="browse-genre" value={genre} onChange={(e) => setFilters({ genre: e.target.value })}>
             <option value="">Any genre</option>
-            {genres.map((g) => <option key={g} value={g}>{g}</option>)}
+            {genres.list.map((g) => <option key={g} value={g}>{g}</option>)}
           </select>
+          {genres.error && <p className="hint">The genre list didn't load.</p>}
         </div>
         <div className="field">
           <span className="label">Released</span>
@@ -137,9 +159,9 @@ export default function BrowsePage() {
       </form>
       {yearError && <p className="error">Years must be from {YEARS[0]} to {YEARS[1]}; that filter is ignored.</p>}
 
-      {state.error && <p className="error" role="alert">{state.error}</p>}
+      {state.error && <ErrorMessage message={state.error} onRetry={() => setAttempt((n) => n + 1)} />}
       {data && (
-        <div aria-busy={state.loading}>
+        <div aria-busy={state.loading} className={state.loading ? 'busy' : undefined}>
           <p className="muted result-count" aria-live="polite">
             {state.loading ? 'Loading…' : `${data.total.toLocaleString('en-US')} movie${data.total === 1 ? '' : 's'}`}
           </p>
@@ -162,7 +184,7 @@ export default function BrowsePage() {
           )}
         </div>
       )}
-      {!data && state.loading && <p className="muted">Loading…</p>}
+      {!data && state.loading && <SkeletonGrid />}
     </section>
   )
 }

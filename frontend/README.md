@@ -17,7 +17,7 @@ npm run build
 
 | route | page |
 |---|---|
-| `/` | creator form: genres, runtime, release month and year, language, director, lead actors, company, optional budget and overview. The results show below it: budget, revenue and score ranges with a range chart, the top 5 factors in plain English, and a note on the model's limitations |
+| `/` | creator form: genres, runtime, release month and year, language, director, lead actors, company, optional budget and overview. The results show below it: budget, revenue and score ranges with a range chart, the top 5 factors in plain English, a "try changing one thing" comparison (genres, release month or year, runtime, language or budget) and a note on the model's limitations. People not in our data can be added as newcomers |
 | `/movies` | public browse page: a poster grid with title search, genre and release-year filters, and pages of 24. The filters are kept in the URL |
 | `/movies/:id` | movie detail: poster, overview, facts (release date, language, budget, box office, score), key crew, companies and the top 10 cast |
 

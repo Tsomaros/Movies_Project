@@ -49,6 +49,16 @@ def test_unknown_people_get_a_warning_not_an_error(client):
     assert post(client, director_id=None, actor_ids=[], company_id=None).status_code == 200
 
 
+def test_negative_ids_are_newcomers(client):
+    newcomer = post(client, actor_ids=[100, -1]).json()
+    assert newcomer == post(client, actor_ids=[100, 888_888]).json()  # same as any id not in the data
+    assert newcomer["prior_films"]["actors_max"] > 0  # the known actor still counts
+    alone = post(client, director_id=-1, actor_ids=[-1, -2], company_id=-1).json()
+    assert alone["prior_films"] == {"director": 0, "actors_max": 0, "company": 0}
+    assert "tends toward small films" in alone["warnings"][0]
+    assert post(client, actor_ids=[-1, -1]).status_code == 422
+
+
 def test_predict_sees_only_earlier_films(client, data):
     from predict import FilmInput, Predictor
     h, bundle, _ = data

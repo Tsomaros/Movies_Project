@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useLocation, useParams } from 'react-router-dom'
 
 import { get } from '../api.js'
+import { ErrorMessage, Loading } from '../components/Status.jsx'
 import { dollars } from '../format.js'
 
 const languageNames = new Intl.DisplayNames(['en'], { type: 'language' })
@@ -71,6 +72,7 @@ export default function MoviePage() {
   const location = useLocation()
   const back = location.state?.from ?? '/movies'
   const [state, setState] = useState({ movie: null, error: null, status: null })
+  const [attempt, setAttempt] = useState(0) // "Try again" bumps it to fetch again
 
   useEffect(() => {
     const controller = new AbortController()
@@ -81,7 +83,7 @@ export default function MoviePage() {
         if (e.name !== 'AbortError') setState({ movie: null, error: e.message, status: e.status })
       })
     return () => controller.abort()
-  }, [id])
+  }, [id, attempt])
 
   useEffect(() => {
     if (state.movie) document.title = `${state.movie.title} · Movie Prediction`
@@ -100,8 +102,10 @@ export default function MoviePage() {
       </section>
     )
   }
-  if (state.error) return <section>{backLink}<p className="error" role="alert">{state.error}</p></section>
-  if (!movie) return <section>{backLink}<p className="muted">Loading…</p></section>
+  if (state.error) {
+    return <section>{backLink}<ErrorMessage message={state.error} onRetry={() => setAttempt((n) => n + 1)} /></section>
+  }
+  if (!movie) return <section>{backLink}<Loading>Loading the movie…</Loading></section>
 
   const subtitle = [movie.release_year, movie.certification, runtime(movie.runtime), movie.genres.join(', ')]
     .filter(Boolean).join(' · ')

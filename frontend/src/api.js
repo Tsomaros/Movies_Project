@@ -17,18 +17,23 @@ function fieldErrors(detail) {
   }))
 }
 
-async function request(path, options = {}) {
+const TIMEOUT_MS = 20_000
+
+async function request(path, { signal, ...options } = {}) {
+  // A hung API must not leave a request waiting forever; the caller's own abort still wins.
+  const timeout = AbortSignal.timeout(TIMEOUT_MS)
   let res
   try {
-    res = await fetch(BASE + path, options)
+    res = await fetch(BASE + path, { ...options, signal: signal ? AbortSignal.any([signal, timeout]) : timeout })
   } catch (e) {
-    if (e.name === 'AbortError') throw e
-    throw new ApiError('Could not reach the prediction service. Is the API running?', 0)
+    if (signal?.aborted) throw e
+    if (timeout.aborted) throw new ApiError('The service took too long to answer. Please try again.', 0)
+    throw new ApiError('Could not reach the service. Is the API running?', 0)
   }
   const body = await res.json().catch(() => null)
   if (!res.ok && body === null && res.status >= 500) {
     // A proxy or gateway answering for a stopped API, or a crash without a JSON body.
-    throw new ApiError(`The prediction service is not responding (${res.status}). Is the API running?`, res.status)
+    throw new ApiError(`The service is not responding (${res.status}). Is the API running?`, res.status)
   }
   if (!res.ok) {
     const detail = body?.detail
