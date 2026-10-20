@@ -93,6 +93,8 @@ class Catalog:
                                      "ORDER BY company_order", [movie_id]).fetchall()
             directors = conn.execute("SELECT person_id AS id, name FROM crew WHERE movie_id = ? AND job = 'Director' "
                                      "ORDER BY rowid", [movie_id]).fetchall()
+            crew = conn.execute("SELECT person_id AS id, name, job FROM crew WHERE movie_id = ? AND job != 'Director' "
+                                "ORDER BY rowid", [movie_id]).fetchall()
             cast = conn.execute("SELECT person_id AS id, name, character FROM cast_members WHERE movie_id = ? "
                                 "ORDER BY cast_order", [movie_id]).fetchall()
             genres = self._genres(conn, [movie_id]).get(movie_id, [])
@@ -100,7 +102,7 @@ class Catalog:
                 "original_language", "certification", "budget", "revenue", "vote_average", "vote_count"]
         return {**{k: m[k] for k in keys}, "poster_url": poster_url(m["poster_path"]), "genres": genres,
                 "companies": [dict(r) for r in companies], "directors": [dict(r) for r in directors],
-                "cast": [dict(r) for r in cast]}
+                "crew": [dict(r) for r in crew], "cast": [dict(r) for r in cast]}
 
     def search_names(self, q: str, kind: str, limit: int = 10) -> list[dict]:
         """Directors, actors or companies whose name contains q, the ones with the most films first."""

@@ -34,6 +34,8 @@ def browse_history() -> dict[str, pd.DataFrame]:
     h = synthetic_history()
     extra = history(*[f for _, f in EXTRAS.values()])
     h = {name: pd.concat([h[name], extra[name]], ignore_index=True) for name in h}
+    writer = pd.DataFrame([{"movie_id": 5000, "person_id": 903, "name": "Wren Writer", "job": "Screenplay"}])
+    h["crew"] = pd.concat([h["crew"], writer], ignore_index=True)
     m = h["movies"]
     for movie_id, (title, _) in EXTRAS.items():
         m.loc[m["id"] == movie_id, "title"] = title

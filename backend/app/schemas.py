@@ -89,6 +89,10 @@ class CastCredit(Credit):
     character: str | None
 
 
+class CrewCredit(Credit):
+    job: str
+
+
 class MovieDetail(BaseModel):
     id: int
     title: str
@@ -107,6 +111,7 @@ class MovieDetail(BaseModel):
     genres: list[str]
     companies: list[Credit]
     directors: list[Credit]
+    crew: list[CrewCredit] = Field(description="Key crew other than the directors: writers, producers, composer")
     cast: list[CastCredit]
 
 

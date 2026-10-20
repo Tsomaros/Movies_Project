@@ -13,7 +13,7 @@ Interactive docs: http://127.0.0.1:8000/docs
 |---|---|
 | `POST /predict` | budget, revenue and score ranges with their top factors and warnings |
 | `GET /movies` | search (`q`), filter (`genre`, `year_from`, `year_to`, `language`), sort and paginate |
-| `GET /movies/{id}` | one movie with genres, companies, directors and cast |
+| `GET /movies/{id}` | one movie with genres, companies, directors, key crew (writers, producers, composer) and cast |
 | `GET /meta/genres`, `GET /meta/languages` | the values the creator form can send |
 | `GET /people?q=&role=director\|actor`, `GET /companies?q=` | name search for the form; ids go into `/predict` |
 | `GET /health` | model training date and calibration years |

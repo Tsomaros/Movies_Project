@@ -137,6 +137,7 @@ def test_movie_detail(client):
     body = client.get("/movies/5000").json()
     assert body["title"] == "Batman Begins" and body["genres"] == ["Action"]
     assert body["directors"] == [{"id": 900, "name": "Nolan Grey"}]
+    assert body["crew"] == [{"id": 903, "name": "Wren Writer", "job": "Screenplay"}]  # directors aren't repeated
     assert body["cast"] == [{"id": 901, "name": "Nolan North", "character": ""}]
     assert body["companies"] == [{"id": 902, "name": "C902"}]
     assert client.get("/movies/123456789").status_code == 404

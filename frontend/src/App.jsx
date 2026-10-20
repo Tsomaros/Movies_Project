@@ -14,7 +14,10 @@ export default function App() {
         <Outlet />
       </main>
       <footer className="site-footer">
-        This product uses the TMDB API but is not endorsed or certified by TMDB.
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" className="tmdb-logo">
+          <img src="/tmdb-logo.svg" alt="TMDB" width="110" height="14" />
+        </a>
+        <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
       </footer>
     </div>
   )
