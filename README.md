@@ -4,31 +4,97 @@
 
 Movie creators lack a quick, data-backed way to sanity-check a project before pitching it, and audiences lack one easy place to explore movies.
 
-This app lets **creators** enter a movie's parameters (genres, runtime, release month, language, director, lead actors, optional budget) and get estimated **ranges** for budget, revenue and audience score, each with the top factors behind it. The **public** can browse, search and view movie information.
+This app lets **creators** enter a movie's parameters (genres, runtime, release month and year, language, production company, director, top 3 billed actors, optional budget and overview) and get estimated **ranges** for budget, worldwide box office and audience score, each with the top factors behind it in plain English. They can then change one input and see how the prediction moves. The **public** can browse, search and filter movies and open a detail page for each.
+
+A 5-minute demo script is in [docs/demo-script.md](docs/demo-script.md) and a one-page summary in [docs/summary.md](docs/summary.md).
 
 ## Stack
 
-- **ML:** Python, pandas, scikit-learn, LightGBM
+- **ML:** Python 3.12, pandas, scikit-learn, LightGBM (quantile models for the ranges, SHAP values from LightGBM for the factors)
 - **Backend:** FastAPI, Pydantic, SQLite
-- **Frontend:** React (Vite)
-- **Data:** [TMDB API](https://developer.themoviedb.org/) and the Kaggle TMDB 5000 dataset
+- **Frontend:** React 19 with React Router, on Vite, in plain JavaScript and CSS
+- **Data:** [TMDB API](https://developer.themoviedb.org/) and the Kaggle TMDB 5000 dataset as a fallback for older films
 
 ## Architecture
 
-_TODO_
+```mermaid
+flowchart TB
+    subgraph ml["ml/ (offline, run by hand)"]
+        tmdb[(TMDB API)] --> collect[collect_tmdb.py]
+        kaggle[(Kaggle TMDB 5000)] --> check[check_kaggle.py]
+        collect --> raw[ml/data/raw/<br/>JSONL and CSV]
+        check --> raw
+        raw --> clean[clean_data.py<br/>dedupe, inflation to 2024 $]
+        clean --> db[(movies.db<br/>SQLite)]
+        db --> feat[features.py<br/>track records from<br/>earlier films only]
+        feat --> train[train.py<br/>LightGBM point + q10/q90,<br/>calibrated ranges]
+        train --> bundle[predictor.joblib]
+        train --> reports[ml/reports/<br/>metrics vs baselines]
+    end
+    subgraph backend["backend/ (FastAPI)"]
+        predict["predict()<br/>ranges + SHAP factors"]
+        catalog[catalog.py<br/>browse and name search]
+        api["POST /predict<br/>GET /movies, /movies/id,<br/>/meta, /people, /companies"]
+    end
+    subgraph frontend["frontend/ (React)"]
+        form[Creator form<br/>results and compare]
+        browse[Browse and<br/>detail pages]
+    end
+    bundle --> predict
+    db --> predict
+    db --> catalog
+    predict --> api
+    catalog --> api
+    api -- JSON --> form
+    api -- JSON --> browse
+```
+
+- **`ml/`** pulls the data, cleans it into SQLite, builds the features, trains and evaluates the models, and saves one bundle with joblib. `ml/src/predict.py` holds the single `predict()` function.
+- **`backend/`** imports `predict.py` and `features.py` directly from `ml/src`, so no ML code is copied. At startup it loads the bundle and the movie history once, then serves predictions and the browse data.
+- **`frontend/`** is the creator form with its results, and the public browse and detail pages. In development, Vite forwards `/api` to the backend.
+
+**The no-leakage rule.** `popularity`, `vote_count` and `vote_average` exist only after release, so they're never features. The director, actor and company track records use only films released before the target film. `ml/tests/test_leakage.py` and an API test check this, and they fail if the date rule is broken.
 
 ## How to run
 
-The full guide comes with the final docs. For now, after building the database (`ml/src/clean_data.py`) and the models (`ml/src/train.py`), start the API:
+You need Python 3.12, Node 22 LTS and a free [TMDB API](https://www.themoviedb.org/settings/api) token. The commands below are for Windows from the repo root; on macOS or Linux use `.venv/bin/python`.
+
+**1. Setup.** Copy `.env.example` to `.env` and fill in `TMDB_READ_TOKEN` (or `TMDB_API_KEY`). The Kaggle dataset is public, so its credentials are optional.
 
 ```bash
+py -3.12 -m venv .venv
 .venv/Scripts/python -m pip install -r backend/requirements.txt
-.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend
 ```
 
-The interactive API docs are at http://127.0.0.1:8000/docs. The endpoints are listed in [backend/README.md](backend/README.md).
+`backend/requirements.txt` includes `ml/requirements.txt`.
 
-Then start the frontend in a second terminal (Node 22 LTS) and open http://localhost:5173:
+**2. Data.** The database, the raw data and the trained models are git-ignored, so a fresh clone builds them first. The TMDB pull is resumable: rerun it after an interruption and it skips the films it already has. The full pull is about 35,000 films and takes a while.
+
+```bash
+.venv/Scripts/python ml/src/collect_tmdb.py
+.venv/Scripts/python ml/src/collect_tmdb.py --add-ids --sort revenue.desc --per-year 500
+.venv/Scripts/python ml/src/collect_tmdb.py --add-ids --sort vote_count.desc --per-year 500
+.venv/Scripts/python ml/src/check_kaggle.py
+.venv/Scripts/python ml/src/clean_data.py
+```
+
+For a quick try, `collect_tmdb.py --limit 20` pulls 20 films only.
+
+**3. Models.** `baselines.py` and `train.py` write the metrics to `ml/reports/`, and `train.py` also saves `ml/models/predictor.joblib`, the bundle the app uses.
+
+```bash
+.venv/Scripts/python ml/src/baselines.py
+.venv/Scripts/python ml/src/train.py
+.venv/Scripts/python ml/src/predict.py
+```
+
+The last command prints a prediction for an example film.
+
+**4. The app.** Start the API, then the frontend in a second terminal, and open http://localhost:5173.
+
+```bash
+.venv/Scripts/python -m uvicorn app.main:app --reload --app-dir backend
+```
 
 ```bash
 cd frontend
@@ -36,9 +102,25 @@ npm install
 npm run dev
 ```
 
+The interactive API docs are at http://127.0.0.1:8000/docs. The endpoints are listed in [backend/README.md](backend/README.md) and the pages in [frontend/README.md](frontend/README.md).
+
+**5. Checks.** The tests build their own small database and models, so they don't need the real data.
+
+```bash
+.venv/Scripts/python -m pytest ml/tests backend/tests -q
+```
+
+```bash
+cd frontend
+npm run lint
+npm run build
+```
+
 ## Evaluation results
 
-Results so far (Day 7). The split is by release year:
+**Data.** The database has 35,950 films released 1916–2025, mostly from the TMDB API, plus older films that only the Kaggle dataset has. 10,751 of them report both a budget and revenue of at least $5,000. The models train on the 10,551 of those released from 1980 on; older films only count towards track records. Every film stays in the database for browsing.
+
+**Split.** The split is by release year:
 - **Train:** 1980–2015.
 - **Valid:** 2016–2018, used only for early stopping and to calibrate the ranges.
 - **Test:** 2019 onward, never used for training, tuning or calibration.
@@ -85,11 +167,24 @@ Score is TMDB's 0–10 vote average, for films with at least 50 votes. The full 
 
 ## Limitations
 
-_TODO_
+The app shows a short version of these under every prediction.
+
+- **Ranges, not answers.** Each range is a 10–90% range. About 8 in 10 similar past films fell inside it, so about 1 in 5 films lands outside, above or below. On the test years, coverage is a few points below 80% (see above).
+- **Which films it learned from.** TMDB films from 1980–2025 that report both a budget and revenue. These are mostly larger and US releases, so small and non-English films are under-represented. Revenue is worldwide box office in 2024 dollars; streaming, TV and home video aren't counted.
+- **What it can't see.** Marketing spend, reviews, competing releases, the script's quality, or how a release actually went. The score model in particular explains only about a fifth of the variance on test (R² 0.20).
+- **Track records come only from our data.** A director's or actor's earlier films count only if they are in the database, and anyone not in it is treated as a newcomer with no earlier films. Only the top 3 billed actors and one production company are used.
+- **Drift.** Recent films score higher than the training years predict, and the 2020–21 cinema closures make box office for those years unusual. The app's models are refit on films up to 2023 and calibrated on 2024–25, but drift after that isn't measured.
+- **The factors are associations.** The SHAP factors show what the model leans on, compared with a typical film in the data, not cause and effect.
+- **Speed.** A prediction takes about 0.75 s, mostly rebuilding track records against the full history.
+- **Not deployed.** Day 14 (deployment) was skipped, so the app runs locally only and the plan's "the app is live" check isn't met.
 
 ## Next steps
 
-_TODO_
+- **Deploy.** Host the API and the static frontend on a free tier such as Render, Fly.io or Railway. The database and the model bundle are git-ignored, so they need to be built during the deploy or uploaded as files. Set `VITE_API_URL` when building the frontend and `CORS_ORIGINS` on the API, then check the live link end to end.
+- **Keep the data fresh.** Schedule the resumable TMDB pull and retrain, so new releases join the track records and the ranges are recalibrated on the latest years.
+- **Faster predictions.** Precompute each person's and company's track record by date instead of rebuilding them on every call.
+- **Better targets.** Add streaming and home-video revenue where a source exists, and model the score drift over time directly.
+- **Compare more.** Let "try changing one thing" swap the director, an actor or the company, which needs the autocomplete in the compare panel.
 
 ---
 
