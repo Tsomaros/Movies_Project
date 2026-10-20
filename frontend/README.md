@@ -17,5 +17,5 @@ npm run build
 
 | route | page |
 |---|---|
-| `/` | creator form: genres, runtime, release month and year, language, director, lead actors, company, optional budget and overview |
+| `/` | creator form: genres, runtime, release month and year, language, director, lead actors, company, optional budget and overview. The results show below it: budget, revenue and score ranges with a range chart, the top 5 factors in plain English, and a note on the model's limitations |
 | `/movies` | public browse page (coming soon) |

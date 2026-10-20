@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import { get, post, searchCompanies, searchPeople } from '../api.js'
 import ActorPicker from '../components/ActorPicker.jsx'
 import GenrePicker, { MAX_GENRES } from '../components/GenrePicker.jsx'
-import RawResults from '../components/RawResults.jsx'
+import Results from '../components/Results.jsx'
 import SinglePicker from '../components/SinglePicker.jsx'
 
 // Defined once so the autocompletes don't restart their search on every render.
@@ -62,6 +62,22 @@ function toRequest(f) {
   }
 }
 
+// The form as submitted, for the results' wording; later edits to the form don't change shown results.
+function snapshot(f, request, languages) {
+  return {
+    genres: request.genres,
+    runtime: request.runtime,
+    monthName: MONTHS[Number(f.month) - 1],
+    year: Number(f.year),
+    languageName: languages.find((l) => l.code === f.language)?.name ?? f.language,
+    director: f.director,
+    actors: f.actors,
+    company: f.company,
+    budget: request.budget,
+    overview: request.overview,
+  }
+}
+
 const FIELD_OF = { genres: 'genres', runtime: 'runtime', release_date: 'release_date', budget: 'budget',
   overview: 'overview' }
 
@@ -72,6 +88,14 @@ export default function PredictPage() {
   const [submitting, setSubmitting] = useState(false)
   const [result, setResult] = useState(null)
   const [requestError, setRequestError] = useState(null)
+  const resultsHeading = useRef(null)
+
+  useEffect(() => {
+    const heading = resultsHeading.current
+    if (!result || !heading) return
+    heading.focus({ preventScroll: true })
+    heading.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [result])
 
   useEffect(() => {
     Promise.all([get('/meta/genres'), get('/meta/languages')])
@@ -91,7 +115,9 @@ export default function PredictPage() {
     if (Object.keys(found).length) return
     setSubmitting(true)
     try {
-      setResult(await post('/predict', toRequest(form)))
+      const request = toRequest(form)
+      const data = await post('/predict', request)
+      setResult({ data, film: snapshot(form, request, meta.languages) })
     } catch (err) {
       const fieldErrors = {}
       const other = []
@@ -188,7 +214,7 @@ export default function PredictPage() {
         </div>
       </form>
 
-      {result && <RawResults result={result} />}
+      {result && <Results result={result.data} film={result.film} headingRef={resultsHeading} />}
     </section>
   )
 }

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model), Day 7 (SHAP explanations, saved models, `predict()`), Day 8 (FastAPI backend), Day 9 (leakage tests) and Day 10 (React frontend with the creator form) are in place. Docker was dropped from Day 9 by the user's decision: the project has no Dockerfile or docker-compose, and Day 14 deploys without containers.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model), Day 7 (SHAP explanations, saved models, `predict()`), Day 8 (FastAPI backend), Day 9 (leakage tests), Day 10 (React frontend with the creator form) and Day 11 (results page) are in place. Docker was dropped from Day 9 by the user's decision: the project has no Dockerfile or docker-compose, and Day 14 deploys without containers.
 
 ## Commands (Windows, run from the repo root)
 
@@ -106,7 +106,11 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 - React 19 + React Router 7 on Vite 6, in plain JavaScript and plain CSS. Routes are in `src/main.jsx`: `/` is the creator form (`PredictPage`), `/movies` is a placeholder for Day 12, and anything else is not found.
 - `src/api.js` calls `import.meta.env.VITE_API_URL`, or `/api` by default. In development, `vite.config.js` proxies `/api/*` to `http://127.0.0.1:8000` and strips the prefix, so CORS isn't involved. A 422's `detail` becomes `ApiError.fields`, which the form shows next to the matching inputs. A 5xx without a JSON body, which is what the proxy returns when the API is down, reads "Is the API running?".
 - `Autocomplete` searches `/people` or `/companies` from 2 characters, 250 ms after typing stops, and aborts the previous request. The search functions are defined at module level so the effect doesn't restart on every render. Only names picked from the list are sent as ids. A typed name that wasn't picked is dropped, and the API's warnings explain newcomers.
-- The form sends `release_date` as `YYYY-MM-01`, since only the month and year reach the model, and the budget in millions × 1e6. Its client checks mirror `PredictRequest`. `RawResults` is the plain Day 10 view of the response; Day 11 replaces it with the results page.
+- The form sends `release_date` as `YYYY-MM-01`, since only the month and year reach the model, and the budget in millions × 1e6. Its client checks mirror `PredictRequest`.
+- The results (`components/Results.jsx`) show under the form, then scroll into view and take focus. At submit, `PredictPage` keeps a copy of the form (`snapshot()`), and the results' wording comes from that copy, so later edits don't change results already shown.
+  - Each of budget, revenue and score is a card with the range, a `RangeChart` and the top 5 drivers. `RangeChart` is HTML/CSS with % positions: a log axis for dollars, 0–10 for score, and labelled markers. These are the entered budget on the budget card, and the budget (entered, or else estimated) on the revenue card.
+  - `explain.js` turns each driver (a SHAP effect against a typical film, on the log scale for dollars) into a plain-English sentence. Its subject comes from the form copy and `prior_films`, and is always singular. Unknown factors fall back to the API's `text`.
+  - `Limitations.jsx` is the limitations note at the end of the results. The up/down colors in `index.css` were checked with the dataviz palette validator in light and dark.
 ## What the app does
 
 A full-stack app with two audiences:
