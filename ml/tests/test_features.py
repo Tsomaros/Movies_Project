@@ -86,6 +86,27 @@ def test_revenue_stats_skip_prior_films_without_financials():
     assert 1 not in df.index  # films without financials are history only, not training rows
 
 
+def test_budget_stats_use_earlier_films_only():
+    df = features(*BACKGROUND,
+                  film(1, "2001-01-01", director=7, actors=[8], company=5, budget=20_000_000),
+                  film(2, "2002-01-01", director=7, actors=[8], company=5, budget=40_000_000),
+                  film(3, "2010-01-01", director=7, actors=[8], company=5, budget=300_000_000),
+                  film(4, "2012-01-01", director=7, budget=900_000_000))  # later: must not count for film 3
+    expected = np.median(np.log1p([20_000_000, 40_000_000]))
+    for col in ["director_med_log_budget", "actor_med_log_budget_mean", "actor_med_log_budget_max",
+                "company_med_log_budget"]:
+        assert df.loc[3, col] == pytest.approx(expected)
+    assert np.isnan(df.loc[1, "director_med_log_budget"])  # debut
+
+
+def test_own_budget_only_reaches_log_budget_adj():
+    base = [*BACKGROUND, film(1, "2001-01-01", director=7, actors=[8], company=5)]
+    a = features(*base, film(2, "2010-01-01", director=7, actors=[8], company=5, budget=10_000_000)).loc[2]
+    b = features(*base, film(2, "2010-01-01", director=7, actors=[8], company=5, budget=99_000_000)).loc[2]
+    changed = [c for c in a.index if a[c] != b[c] and not (pd.isna(a[c]) and pd.isna(b[c]))]
+    assert changed == ["log_budget_adj", "y_log_budget"]
+
+
 def test_prior_score_needs_enough_votes():
     df = features(*BACKGROUND, film(1, "2001-01-01", director=7, vote_average=2.0, vote_count=3),
                   film(2, "2002-01-01", director=7, vote_average=8.0), film(3, "2010-01-01", director=7))

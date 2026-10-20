@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics) and Day 5 (LightGBM revenue and score models) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models) and Day 6 (budget model) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -41,7 +41,7 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 
 - `build_features(load_history())` returns one row per trainable movie: `META` columns, the features, and the `TARGETS` (`y_log_revenue`, `y_score`, `y_log_budget`). `feature_columns(df)` gives the model inputs and fails if any leaky column is present.
 - Training-year state, such as the genre list, the top-10 languages and the overview TF-IDF+SVD topics, is fit on years ≤ 2015 only and held in a `FeatureSpec`. That spec must be reused for validation, test and `predict()`.
-- `track_record()` builds the director, top-3 actor and lead-company stats from **all** films in the DB released strictly before the target. Revenue stats use only prior films with financials, and prior scores use only films with ≥ 50 votes. Unknown entities get `n_prior = 0` and NaN stats. A target doesn't need to exist in the DB, so `predict()` can pass a new film.
+- `track_record()` builds the director, top-3 actor and lead-company stats from **all** films in the DB released strictly before the target. Revenue and budget stats (`*_med_log_rev`, `*_med_log_budget`) use only prior films with financials, and prior scores use only films with ≥ 50 votes. Unknown entities get `n_prior = 0` and NaN stats. A target doesn't need to exist in the DB, so `predict()` can pass a new film.
 - Training rows are films with financials from 1980 on (`MIN_TARGET_YEAR`); older films are only history for track records. `y_score` is NaN for films with fewer than 50 votes, so select rows per target with `target_rows(df, target)`. `split_frames(df)` gives train/valid/test.
 
 ## Evaluation (`ml/src/evaluate.py`, `ml/src/baselines.py`)
@@ -60,10 +60,12 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
   - revenue `lgbm` uses `log_budget_adj`
   - revenue `lgbm_no_budget` leaves the budget out, because the creator's budget is optional
   - the score `lgbm` never uses the budget
+  - the budget `lgbm` (`y_log_budget`) leaves out `log_budget_adj`, which is its own target
+- `budget_quality(table)` applies the "rough estimate" rule, decided on valid only: the budget model is rough if valid R² < `ROUGH_MIN_R2` (0.30) or its MAE is less than `ROUGH_MIN_GAIN` (15%) below the genre median. The verdict goes into `metrics.md`; Day 7's `predict()` uses it for the label. The range itself is not widened further.
 - `PARAMS` are fixed. Valid (2016–18) is used only for early stopping, which picks the number of trees, and for the range calibration. Test (2019+) is never used in training, tuning or calibration.
 - `main()` writes `ml/reports/models.csv`, with the baselines next to the models, and `ml/reports/metrics.md` (valid and test, in markdown). The README's results table is copied from it by hand.
 - `main()` also writes `ml/reports/coverage_by_year.csv`, test coverage per release year with the share of films below and above the range. `metrics.md` adds coverage without 2020–21 (`SHOCK_YEARS`, the cinema closures). These years are only reported, never used to tune anything.
-- Models aren't saved yet; joblib is Day 7. Plan for the saved models: same `PARAMS`, fit on films up to 2023, with early stopping and range calibration on 2024–25, so live ranges reflect recent drift. The README's numbers stay the Day 5 split.
+- Models aren't saved yet; joblib is Day 7. Plan for the saved models: same `PARAMS`, fit on films up to 2023, with early stopping and range calibration on 2024–25, so live ranges reflect recent drift. The README's numbers stay the Day 5 split. `predict()` takes the overview as an optional creator input; without one, the topic features are those of an empty text.
 
 ## What the app does
 

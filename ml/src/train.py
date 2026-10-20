@@ -9,7 +9,10 @@ quantile regression). The test years (2019+) are never seen in training or
 calibration, so they give the honest numbers for the README.
 
 Revenue gets two models because the creator's budget is optional: `lgbm` uses
-the budget, `lgbm_no_budget` does not. The score model never uses the budget.
+the budget, `lgbm_no_budget` does not. The score model never uses the budget,
+and the budget model estimates it from everything else. If the budget model
+isn't clearly better than the genre median on valid, it is flagged as a rough
+estimate (see `budget_quality`).
 
 Usage:
     python ml/src/train.py      # prints the table, writes ml/reports/models.csv, coverage_by_year.csv and metrics.md
@@ -42,7 +45,13 @@ MODELS = {
     ("y_log_revenue", "lgbm"): set(),
     ("y_log_revenue", "lgbm_no_budget"): {"log_budget_adj"},
     ("y_score", "lgbm"): {"log_budget_adj"},
+    ("y_log_budget", "lgbm"): {"log_budget_adj"},  # the film's own budget is the target
 }
+
+# The budget model is a "rough estimate" unless, on valid, it reaches this R² and beats the
+# genre-median MAE by this share. Fixed before seeing the results; test never decides it.
+ROUGH_MIN_R2 = 0.30
+ROUGH_MIN_GAIN = 0.15
 
 log = logging.getLogger("train")
 
@@ -139,6 +148,15 @@ def coverage_excluding(by_year: pd.DataFrame, years=SHOCK_YEARS) -> pd.Series:
     return hits / kept["n"].groupby(level=["target", "model"], sort=False).sum()
 
 
+def budget_quality(table: pd.DataFrame) -> dict:
+    """Valid R² of the budget model, its MAE gain over the genre median, and whether it's a rough estimate."""
+    model = table.loc[("y_log_budget", "lgbm", "valid")]
+    baseline = table.loc[("y_log_budget", "genre_median", "valid")]
+    gain = 1 - model["mae"] / baseline["mae"]
+    return {"r2": float(model["r2"]), "gain": float(gain),
+            "rough": bool(model["r2"] < ROUGH_MIN_R2 or gain < ROUGH_MIN_GAIN)}
+
+
 def markdown_table(table: pd.DataFrame, splits=("valid", "test")) -> str:
     """Valid and test rows per target as markdown, ready for the README."""
     fmt = {"n": "{:.0f}", "mae": "{:.3f}", "r2": "{:.3f}", "mdape": "{:.0%}", "coverage": "{:.0%}", "width": "{:.2f}"}
@@ -170,6 +188,10 @@ def main() -> None:
     shock = ", ".join(map(str, SHOCK_YEARS))
     note = [f"**Test range coverage without {shock}**", ""] + [
         f"- {target} / {name}: {cov:.0%}" for (target, name), cov in excluded.items()] + [""]
+    quality = budget_quality(table)
+    note += [f"**Budget model: {'rough estimate' if quality['rough'] else 'reliable'}**", "",
+             f"Valid R² {quality['r2']:.3f} (needs {ROUGH_MIN_R2:.2f}), MAE {quality['gain']:.0%} below the "
+             f"genre median (needs {ROUGH_MIN_GAIN:.0%}).", ""]
     table.to_csv(MODELS_PATH, float_format="%.4f")
     by_year.to_csv(COVERAGE_PATH, float_format="%.4f")
     METRICS_MD_PATH.write_text(markdown_table(table) + "\n" + "\n".join(note), encoding="utf-8")

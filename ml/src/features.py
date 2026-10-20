@@ -129,6 +129,7 @@ def films_table(movies: pd.DataFrame) -> pd.DataFrame:
     f = movies[["id", "release_date", "release_year"]].copy()
     f["release_date"] = pd.to_datetime(f["release_date"])
     f["log_rev"] = np.log1p(movies["revenue_adj"].where(movies["has_financials"] == 1).astype(float))
+    f["log_budget"] = np.log1p(movies["budget_adj"].where(movies["has_financials"] == 1).astype(float))
     f["score"] = movies["vote_average"].where(movies["vote_count"] >= MIN_SCORE_VOTES).astype(float)
     return f
 
@@ -139,22 +140,24 @@ def track_record(links: pd.DataFrame, films: pd.DataFrame, targets: pd.DataFrame
     links:   (movie_id, entity_id) for the history films, e.g. every director credit.
     targets: (key, entity_id, release_date, release_year), one row per entity of a target film.
              A target needn't exist in `films`, which is how predict() handles a new film.
-    Returns one row per target row: n_prior (0 if unknown), med_log_rev, mean_score, years_active.
+    Returns one row per target row: n_prior (0 if unknown), med_log_rev, med_log_budget, mean_score, years_active.
     """
     hist = links.drop_duplicates().merge(films, left_on="movie_id", right_on="id")
     hist = hist.rename(columns={"release_date": "prior_date", "release_year": "prior_year"})
-    pairs = targets.merge(hist[["entity_id", "prior_date", "prior_year", "log_rev", "score"]], on="entity_id")
+    pairs = targets.merge(hist[["entity_id", "prior_date", "prior_year", "log_rev", "log_budget", "score"]],
+                          on="entity_id")
     prior = pairs[pairs["prior_date"] < pairs["release_date"]]
     stats = prior.groupby(["key", "entity_id"]).agg(
         n_prior=("prior_date", "size"),
         med_log_rev=("log_rev", "median"),
+        med_log_budget=("log_budget", "median"),
         mean_score=("score", "mean"),
         first_year=("prior_year", "min"),
     ).reset_index()
     out = targets.merge(stats, on=["key", "entity_id"], how="left")
     out["n_prior"] = out["n_prior"].fillna(0).astype(int)
     out["years_active"] = out["release_year"] - out["first_year"]
-    return out[["key", "entity_id", "n_prior", "med_log_rev", "mean_score", "years_active"]]
+    return out[["key", "entity_id", "n_prior", "med_log_rev", "med_log_budget", "mean_score", "years_active"]]
 
 
 def target_links(links: pd.DataFrame, films: pd.DataFrame, ids: pd.Index) -> pd.DataFrame:
@@ -171,6 +174,7 @@ def track_record_features(history: dict[str, pd.DataFrame], ids: pd.Index) -> pd
     d = track_record(directors, films, target_links(directors, films, ids)).groupby("key").agg(
         director_n_prior=("n_prior", "max"),  # co-directed films: most experienced director, mean of the stats
         director_med_log_rev=("med_log_rev", "mean"),
+        director_med_log_budget=("med_log_budget", "mean"),
         director_score=("mean_score", "mean"),
         director_years_active=("years_active", "max"),
     )
@@ -182,6 +186,8 @@ def track_record_features(history: dict[str, pd.DataFrame], ids: pd.Index) -> pd
         actor_n_prior_max=("n_prior", "max"),
         actor_med_log_rev_mean=("med_log_rev", "mean"),
         actor_med_log_rev_max=("med_log_rev", "max"),
+        actor_med_log_budget_mean=("med_log_budget", "mean"),
+        actor_med_log_budget_max=("med_log_budget", "max"),
         actor_score_mean=("mean_score", "mean"),
     )
 
@@ -189,6 +195,7 @@ def track_record_features(history: dict[str, pd.DataFrame], ids: pd.Index) -> pd
     c = track_record(lead, films, target_links(lead, films, ids)).groupby("key").agg(
         company_n_prior=("n_prior", "max"),
         company_med_log_rev=("med_log_rev", "max"),
+        company_med_log_budget=("med_log_budget", "max"),
     )
 
     out = pd.DataFrame(index=ids).join(d).join(a).join(c)

@@ -2,14 +2,14 @@ import numpy as np
 import pandas as pd
 
 from features import FORBIDDEN
-from train import (MODELS, RangeModel, coverage_by_year, coverage_excluding, evaluate_models, features_for,
-                   markdown_table)
+from train import (MODELS, RangeModel, budget_quality, coverage_by_year, coverage_excluding, evaluate_models,
+                   features_for, markdown_table)
 
 FAST = dict(n_estimators=60, learning_rate=0.1, min_child_samples=5, n_jobs=1)
 
 
 def frame(n_train=300, n_valid=100, n_test=100, seed=0):
-    """Revenue rises with x and budget, score with x; noise is the rest."""
+    """Revenue rises with x and budget, score and budget target with x; noise is the rest."""
     rng = np.random.default_rng(seed)
     n = n_train + n_valid + n_test
     x, budget = rng.normal(0, 1, n), rng.uniform(14, 18, n)
@@ -20,7 +20,7 @@ def frame(n_train=300, n_valid=100, n_test=100, seed=0):
         "original_language": pd.Categorical(rng.choice(["en", "other"], n), categories=["en", "other"]),
         "y_log_revenue": 2 * x + budget + rng.normal(0, 0.3, n),
         "y_score": 6 + 0.8 * x + rng.normal(0, 0.2, n),
-        "y_log_budget": budget,
+        "y_log_budget": 16 + x + rng.normal(0, 0.3, n),
     })
 
 
@@ -28,7 +28,7 @@ def test_test_targets_never_reach_training():
     df = frame()
     changed = df.copy()
     test = changed["split"] == "test"
-    changed.loc[test, ["y_log_revenue", "y_score"]] += 100
+    changed.loc[test, ["y_log_revenue", "y_score", "y_log_budget"]] += 100
     _, a = evaluate_models(df, **FAST)
     _, b = evaluate_models(changed, **FAST)
     for key in MODELS:
@@ -68,7 +68,7 @@ def test_calibration_brings_valid_coverage_to_80_percent():
 def test_models_beat_the_median_on_a_planted_signal():
     df = frame()
     table, _ = evaluate_models(df, **FAST)
-    for target in ["y_log_revenue", "y_score"]:
+    for target in ["y_log_revenue", "y_score", "y_log_budget"]:
         median_mae = np.mean(np.abs(df.query("split == 'valid'")[target] - df.query("split == 'train'")[target].median()))
         assert (table.xs((target, "valid"), level=("target", "split"))["mae"] < 0.8 * median_mae).all()
     # with the budget, revenue is almost fully explained
@@ -87,7 +87,7 @@ def test_coverage_by_year_adds_up_to_the_test_coverage():
     test = df["split"] == "test"
     df.loc[test, "release_date"] = [f"{2019 + i % 4}-06-01" for i in range(test.sum())]
     table, fitted = evaluate_models(df, **FAST)
-    by_year = coverage_by_year(fitted, df)
+    by_year = coverage_by_year(fitted, df).sort_index()
     for key in MODELS:
         part = by_year.loc[key]
         assert list(part.index) == [2019, 2020, 2021, 2022]
@@ -96,6 +96,18 @@ def test_coverage_by_year_adds_up_to_the_test_coverage():
         assert np.isclose(overall, table.loc[(*key, "test"), "coverage"])
         kept = part.drop([2020, 2021])
         assert np.isclose(coverage_excluding(by_year)[key], np.average(kept["coverage"], weights=kept["n"]))
+
+
+def test_budget_quality_flags_rough():
+    def table(r2, mae):
+        rows = [{"target": "y_log_budget", "model": "genre_median", "split": "valid", "mae": 1.0, "r2": 0.0},
+                {"target": "y_log_budget", "model": "lgbm", "split": "valid", "mae": mae, "r2": r2}]
+        return pd.DataFrame(rows).set_index(["target", "model", "split"])
+
+    assert not budget_quality(table(r2=0.5, mae=0.7))["rough"]
+    assert budget_quality(table(r2=0.2, mae=0.7))["rough"]  # low R²
+    assert budget_quality(table(r2=0.5, mae=0.9))["rough"]  # too little gain over the genre median
+    assert np.isclose(budget_quality(table(r2=0.5, mae=0.7))["gain"], 0.3)
 
 
 def test_markdown_table_has_valid_and_test_only():
