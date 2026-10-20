@@ -8,10 +8,10 @@
 | genre_median | test | 1683 | 1.954 | -0.121 | 138% | 78% | 5.56 |
 | budget_linear | valid | 1005 | 1.232 | 0.430 | 70% | 79% | 3.87 |
 | budget_linear | test | 1683 | 1.372 | 0.397 | 76% | 77% | 3.87 |
-| lgbm | valid | 1005 | 1.033 | 0.576 | 65% | 80% | 3.28 |
-| lgbm | test | 1683 | 1.247 | 0.481 | 78% | 74% | 3.43 |
-| lgbm_no_budget | valid | 1005 | 1.142 | 0.500 | 70% | 80% | 3.43 |
-| lgbm_no_budget | test | 1683 | 1.326 | 0.426 | 81% | 76% | 3.60 |
+| lgbm | valid | 1005 | 1.042 | 0.569 | 64% | 80% | 3.27 |
+| lgbm | test | 1683 | 1.240 | 0.483 | 77% | 74% | 3.44 |
+| lgbm_no_budget | valid | 1005 | 1.138 | 0.501 | 71% | 80% | 3.52 |
+| lgbm_no_budget | test | 1683 | 1.335 | 0.418 | 81% | 77% | 3.66 |
 
 **y_score**
 
@@ -21,8 +21,8 @@
 | global_median | test | 1384 | 0.643 | -0.161 | 80% | 2.00 |
 | genre_median | valid | 875 | 0.583 | 0.073 | 79% | 1.87 |
 | genre_median | test | 1384 | 0.617 | -0.062 | 77% | 1.87 |
-| lgbm | valid | 875 | 0.489 | 0.348 | 80% | 1.59 |
-| lgbm | test | 1384 | 0.525 | 0.210 | 78% | 1.59 |
+| lgbm | valid | 875 | 0.491 | 0.339 | 80% | 1.59 |
+| lgbm | test | 1384 | 0.526 | 0.204 | 78% | 1.59 |
 
 **y_log_budget**
 
@@ -32,16 +32,16 @@
 | global_median | test | 1683 | 1.453 | -0.151 | 89% | 79% | 4.13 |
 | genre_median | valid | 1005 | 1.312 | -0.068 | 82% | 79% | 3.91 |
 | genre_median | test | 1683 | 1.408 | -0.098 | 90% | 79% | 3.91 |
-| lgbm | valid | 1005 | 0.650 | 0.706 | 46% | 80% | 1.89 |
-| lgbm | test | 1683 | 0.693 | 0.725 | 48% | 79% | 1.99 |
+| lgbm | valid | 1005 | 0.652 | 0.700 | 45% | 80% | 1.87 |
+| lgbm | test | 1683 | 0.703 | 0.715 | 49% | 78% | 1.94 |
 
 **Test range coverage without 2020, 2021**
 
 - y_log_revenue / lgbm: 77%
-- y_log_revenue / lgbm_no_budget: 77%
-- y_score / lgbm: 77%
+- y_log_revenue / lgbm_no_budget: 79%
+- y_score / lgbm: 78%
 - y_log_budget / lgbm: 79%
 
 **Budget model: reliable**
 
-Valid R² 0.706 (needs 0.30), MAE 50% below the genre median (needs 15%).
+Valid R² 0.700 (needs 0.30), MAE 50% below the genre median (needs 15%).

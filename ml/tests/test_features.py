@@ -155,6 +155,20 @@ def test_pre_1980_films_are_history_not_targets():
     assert df.loc[2, "director_n_prior"] == 1
 
 
-def test_empty_overview_gives_zero_topics():
-    df = features(*BACKGROUND, film(1, overview=""))
-    assert df.loc[1, ["ov_0", "ov_1", "overview_words"]].tolist() == [0, 0, 0]
+def test_blank_overview_gets_the_average_training_overview():
+    df = features(*BACKGROUND, film(1, overview=""), film(2, overview="   "))
+    cols = ["ov_0", "ov_1", "overview_words"]
+    average = df.loc[[100, 101, 102, 103, 104], cols].mean()  # the background films are the train-year overviews
+    np.testing.assert_allclose(df.loc[1, cols].astype(float), average)
+    np.testing.assert_allclose(df.loc[2, cols].astype(float), average)
+    assert df.loc[1, "overview_words"] > 0
+
+
+def test_number_of_companies_is_not_a_feature():
+    # a creator enters one company, while listed films often have several
+    one = features(*BACKGROUND, film(1, company=5)).loc[1]
+    h = history(*BACKGROUND, film(1, company=5))
+    h["companies"] = pd.concat([h["companies"], pd.DataFrame(
+        [{"movie_id": 1, "company_id": 6, "name": "C6", "company_order": 1}])], ignore_index=True)
+    many = build_features(h, fit_spec(h, n_topics=2, min_df=1))[0].set_index("id").loc[1]
+    pd.testing.assert_series_equal(one, many)

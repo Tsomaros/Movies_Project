@@ -12,6 +12,7 @@ ml/data/*.db
 ml/data/*.csv
 !ml/data/cpi_us.csv
 models/*.joblib
+ml/models/
 
 # Frontend
 node_modules/

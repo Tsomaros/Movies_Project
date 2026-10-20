@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models) and Day 6 (budget model) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model) and Day 7 (SHAP explanations, saved models, `predict()`) are in place. `backend/` and `frontend/` are placeholders until Days 8 and 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -19,7 +19,8 @@ py -3.12 -m venv .venv
 .venv/Scripts/python ml/src/clean_data.py                # clean both sources -> ml/data/movies.db (rebuilt each run)
 .venv/Scripts/python ml/src/features.py                  # features for trainable rows -> ml/data/features.csv (git-ignored)
 .venv/Scripts/python ml/src/baselines.py                 # baselines on the time split -> ml/reports/baselines.csv (committed)
-.venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv, coverage_by_year.csv, metrics.md (committed)
+.venv/Scripts/python ml/src/train.py                     # LightGBM models -> ml/reports/models.csv, coverage_by_year.csv, importance.csv, metrics.md (committed) + ml/models/predictor.joblib (git-ignored)
+.venv/Scripts/python ml/src/predict.py                   # example prediction from the saved models
 .venv/Scripts/python -m pytest ml/tests -q               # tests (one test: add ::test_name to ml/tests/test_clean.py)
 ```
 
@@ -40,6 +41,7 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 ## Features (`ml/src/features.py`)
 
 - `build_features(load_history())` returns one row per trainable movie: `META` columns, the features, and the `TARGETS` (`y_log_revenue`, `y_score`, `y_log_budget`). `feature_columns(df)` gives the model inputs and fails if any leaky column is present.
+- Every feature must be something the creator form can supply the same way the data does. That's why the number of companies isn't a feature (the form takes one company) and why blank overviews get the average training topics.
 - Training-year state, such as the genre list, the top-10 languages and the overview TF-IDF+SVD topics, is fit on years ≤ 2015 only and held in a `FeatureSpec`. That spec must be reused for validation, test and `predict()`.
 - `track_record()` builds the director, top-3 actor and lead-company stats from **all** films in the DB released strictly before the target. Revenue and budget stats (`*_med_log_rev`, `*_med_log_budget`) use only prior films with financials, and prior scores use only films with ≥ 50 votes. Unknown entities get `n_prior = 0` and NaN stats. A target doesn't need to exist in the DB, so `predict()` can pass a new film.
 - Training rows are films with financials from 1980 on (`MIN_TARGET_YEAR`); older films are only history for track records. `y_score` is NaN for films with fewer than 50 votes, so select rows per target with `target_rows(df, target)`. `split_frames(df)` gives train/valid/test.
@@ -65,7 +67,16 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 - `PARAMS` are fixed. Valid (2016–18) is used only for early stopping, which picks the number of trees, and for the range calibration. Test (2019+) is never used in training, tuning or calibration.
 - `main()` writes `ml/reports/models.csv`, with the baselines next to the models, and `ml/reports/metrics.md` (valid and test, in markdown). The README's results table is copied from it by hand.
 - `main()` also writes `ml/reports/coverage_by_year.csv`, test coverage per release year with the share of films below and above the range. `metrics.md` adds coverage without 2020–21 (`SHOCK_YEARS`, the cinema closures). These years are only reported, never used to tune anything.
-- Models aren't saved yet; joblib is Day 7. Plan for the saved models: same `PARAMS`, fit on films up to 2023, with early stopping and range calibration on 2024–25, so live ranges reflect recent drift. The README's numbers stay the Day 5 split. `predict()` takes the overview as an optional creator input; without one, the topic features are those of an empty text.
+- `RangeModel.contributions(df)` gives the point model's SHAP values (LightGBM `pred_contrib`, no `shap` package), summed into readable factors by `FACTOR_GROUPS` / `factor_of`, plus a `base` column. Per row they add up to the raw point prediction. `main()` writes `ml/reports/importance.csv`, the mean |SHAP| share per factor on test.
+- The app's models come from `fit_live(history)`: same `PARAMS` and `MODELS`, with a `FeatureSpec` fit on ≤ 2023 (`fit_spec(..., train_end=)`), train ≤ 2023, early stopping and calibration on 2024–25. `main()` saves the bundle with joblib to `ml/models/predictor.joblib`: `spec`, `models`, `budget_rough` (from the evaluation split's `budget_quality`), `valid_years`, `valid_coverage` and `trained_on`. The README's numbers stay on the evaluation split. `train.py`'s `__main__` runs `train.main()` so the models pickle as `train.RangeModel`.
+
+## Prediction (`ml/src/predict.py`)
+
+- `Predictor(bundle=MODEL_PATH, history=None)` loads the bundle and `load_history()` once. `predict(FilmInput, top_k=5)` returns `budget`, `revenue` and `score`, each with `low`, `point`, `high` (dollars, or 0–10 for score), `model`, `label` and `drivers` (`factor`, `effect`, `text`), plus `prior_films`.
+- `FilmInput` identifies the director, top-3 actors and lead company by TMDB id. The budget (today's dollars) and the overview are optional. A blank overview gets `OverviewEncoder.blank`, the average topics and word count of training films that have one; this applies in training too. Unknown genres or a non-positive budget/runtime raise `ValueError`.
+- The film is added to a copy of the history as id −1 without outcomes and goes through `build_features`, so its track records only use earlier films, and unknown ids get `n_prior = 0`.
+- Revenue uses `lgbm` when a budget is given and `lgbm_no_budget` otherwise. The budget's `label` is "rough estimate" when `budget_rough` is set, and a given budget is echoed as `given`.
+- A call takes about 0.75 s on the full DB, mostly the history copy and track records.
 
 ## What the app does
 

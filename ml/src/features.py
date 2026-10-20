@@ -1,7 +1,7 @@
 """Build model features from ml/data/movies.db.
 
-Base features (genres, runtime, release month/year, language, companies, budget,
-overview topics) plus director, actor and lead-company track records. Track
+Base features (genres, runtime, release month/year, language, budget, overview
+topics) plus director, actor and lead-company track records. Track
 records only use films released strictly before the target film, so nothing a
 model sees could only be known after release. popularity, vote_count and
 vote_average of the target film are never features.
@@ -68,7 +68,11 @@ def load_history(path: Path = DB_PATH) -> dict[str, pd.DataFrame]:
 
 
 class OverviewEncoder:
-    """TF-IDF of the overview reduced to a few SVD topic dimensions, plus the word count."""
+    """TF-IDF of the overview reduced to a few SVD topic dimensions, plus the word count.
+
+    A blank overview gets the average values of the training films that have one, so a creator who leaves it
+    out gets a neutral overview rather than that of the few (mostly small) films listed without one.
+    """
 
     def __init__(self, n_topics: int = N_TOPICS, min_df: int = 5):
         self.tfidf = TfidfVectorizer(stop_words="english", ngram_range=(1, 2), min_df=min_df, sublinear_tf=True)
@@ -76,13 +80,20 @@ class OverviewEncoder:
         self.columns = [f"ov_{i}" for i in range(n_topics)]
 
     def fit(self, texts: pd.Series) -> "OverviewEncoder":
-        self.svd.fit(self.tfidf.fit_transform(texts.fillna("")))
+        texts = texts.fillna("")
+        self.svd.fit(self.tfidf.fit_transform(texts))
+        self.blank = self._encode(texts[texts.str.strip() != ""]).mean()
         return self
+
+    def _encode(self, texts: pd.Series) -> pd.DataFrame:
+        out = pd.DataFrame(self.svd.transform(self.tfidf.transform(texts)), index=texts.index, columns=self.columns)
+        out["overview_words"] = texts.str.split().str.len().astype(float)
+        return out
 
     def transform(self, texts: pd.Series) -> pd.DataFrame:
         texts = texts.fillna("")
-        out = pd.DataFrame(self.svd.transform(self.tfidf.transform(texts)), index=texts.index, columns=self.columns)
-        out["overview_words"] = texts.str.split().str.len()
+        out = self._encode(texts)
+        out.loc[texts.str.strip() == "", self.blank.index] = self.blank.to_numpy()
         return out
 
 
@@ -95,9 +106,11 @@ class FeatureSpec:
     overview: OverviewEncoder
 
 
-def fit_spec(history: dict[str, pd.DataFrame], n_topics: int = N_TOPICS, min_df: int = 5) -> FeatureSpec:
+def fit_spec(history: dict[str, pd.DataFrame], n_topics: int = N_TOPICS, min_df: int = 5,
+             train_end: int = TRAIN_END_YEAR) -> FeatureSpec:
+    """Fit on films up to `train_end` (the saved app models use a later year than the evaluation)."""
     movies = history["movies"]
-    train = movies[movies["release_year"] <= TRAIN_END_YEAR]
+    train = movies[movies["release_year"] <= train_end]
     trainable = train[train["has_financials"] == 1]
     languages = trainable["original_language"].value_counts().index[:TOP_LANGUAGES].tolist()
     genres = sorted(history["genres"]["name"].dropna().unique())
@@ -119,7 +132,6 @@ def base_features(movies: pd.DataFrame, history: dict[str, pd.DataFrame], spec: 
     X["release_month"] = m["release_month"]
     lang = m["original_language"].where(m["original_language"].isin(spec.languages), "other")
     X["original_language"] = pd.Categorical(lang, categories=[*spec.languages, "other"])
-    X["n_companies"] = history["companies"].groupby("movie_id").size().reindex(m.index, fill_value=0)
     X["log_budget_adj"] = np.log1p(m["budget_adj"].astype(float))
     return X.join(spec.overview.transform(m["overview"]))
 
