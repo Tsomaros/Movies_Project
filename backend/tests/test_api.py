@@ -1,3 +1,6 @@
+from concurrent.futures import ThreadPoolExecutor
+
+import pandas as pd
 import pytest
 
 FILM = dict(genres=["Drama"], runtime=110, release_date="2025-05-01", director_id=1, actor_ids=[100, 201],
@@ -44,6 +47,38 @@ def test_unknown_people_get_a_warning_not_an_error(client):
     partial = post(client, director_id=999_999).json()["warnings"]
     assert partial == ["No earlier films in our data for the director, so they count as newcomers."]
     assert post(client, director_id=None, actor_ids=[], company_id=None).status_code == 200
+
+
+def test_predict_sees_only_earlier_films(client, data):
+    from predict import FilmInput, Predictor
+    h, bundle, _ = data
+    film = {**FILM, "release_date": "2010-05-01"}
+    earlier = set(h["movies"].loc[pd.to_datetime(h["movies"]["release_date"]) < "2010-05-01", "id"])
+    cut = {name: t[t["id" if name == "movies" else "movie_id"].isin(earlier)] for name, t in h.items()}
+    assert len(earlier) < len(h["movies"])
+    direct = Predictor(bundle, cut).predict(FilmInput(**film))
+    body = client.post("/predict", json=film).json()
+    for kind in ["budget", "revenue", "score"]:
+        for key in ["low", "point", "high"]:
+            assert body[kind][key] == pytest.approx(direct[kind][key], rel=1e-9)
+    assert body["prior_films"] == direct["prior_films"]
+
+
+def test_concurrent_predictions_match_sequential_ones(client):
+    inputs = [{}, {"budget": 20_000_000}, {"director_id": 999_999}, {"actor_ids": []},
+              {"budget": 150_000_000, "genres": ["Action", "Comedy"]}, {"company_id": None}, {"runtime": 180},
+              {"release_date": "2001-02-03"}]
+    sequential = [post(client, **changes).json() for changes in inputs]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        concurrent = list(pool.map(lambda changes: post(client, **changes).json(), inputs))
+    assert concurrent == sequential
+    assert post(client).json() == sequential[0]  # the shared history wasn't changed
+
+
+def test_budget_limits_and_blank_overview(client):
+    assert post(client, budget=2_000_000_000).status_code == 200
+    assert post(client, budget=2_000_000_001).status_code == 422
+    assert post(client, overview="").status_code == 200
 
 
 def test_late_year_and_rare_language_warnings(client):

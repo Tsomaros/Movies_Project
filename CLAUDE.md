@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project status
 
-The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model), Day 7 (SHAP explanations, saved models, `predict()`) and Day 8 (FastAPI backend) are in place. `frontend/` is a placeholder until Day 10.
+The project follows `Movie Prediction App 3-Week Project Plan.pdf` (a 15-working-day plan dated 2026-10-19), one day at a time. Day 1 (setup and data collection), Day 2 (cleaning → SQLite), Day 3 (feature engineering), Day 4 (time split, baselines, metrics), Day 5 (LightGBM revenue and score models), Day 6 (budget model), Day 7 (SHAP explanations, saved models, `predict()`), Day 8 (FastAPI backend) and Day 9 (leakage tests) are in place. Docker was dropped from Day 9 by the user's decision: the project has no Dockerfile or docker-compose, and Day 14 deploys without containers. `frontend/` is a placeholder until Day 10.
 
 ## Commands (Windows, run from the repo root)
 
@@ -89,13 +89,21 @@ Credentials go in `.env` at the repo root (see `.env.example`): `TMDB_READ_TOKEN
 - Endpoints: `GET /health`, `POST /predict`, `GET /movies`, `GET /movies/{id}`, `GET /meta/genres`, `GET /meta/languages`, `GET /people`, `GET /companies`.
 - `backend/tests/conftest.py` builds a synthetic DB (with `clean_data.write_sqlite`) and a FAST `fit_live` bundle, reusing `ml/tests` helpers, so the API tests need neither the real data nor the trained models.
 
+## Leakage tests
+
+- `ml/tests/test_leakage.py` checks the no-leakage rule over the whole feature table, not one film:
+  - Scrambling the outcomes of every film on or after a cutoff leaves all `feature_columns` of earlier rows unchanged, and so does dropping those films.
+  - A row's own revenue and votes reach only its `y_*` targets, and its budget only `log_budget_adj` and `y_log_budget`.
+  - `fit_spec`'s languages and overview encoder ignore films after `train_end`. The genre list is TMDB's fixed vocabulary from all years, which carries no outcomes.
+- `backend/tests/test_api.py::test_predict_sees_only_earlier_films` checks the same rule through `POST /predict`.
+- Breaking the date rule in `track_record` (`<` → `<=`, or no date filter at all) makes these tests fail. Keep it that way when changing features.
 ## What the app does
 
 A full-stack app with two audiences:
 - **Creators** enter a movie's parameters (genres, runtime, release month/year, language, production company, director, top 3 billed actors, optional budget) and get **ranges** for budget, revenue and score, each with the top factors behind it.
 - **The public** browses, searches and filters movies and views detail pages.
 
-Stack: Python, scikit-learn/LightGBM, FastAPI, Pydantic, SQLite, React (Vite) with a router, Docker / docker-compose. Data comes from the TMDB API, with the Kaggle TMDB 5000 dataset as a fallback for older films.
+Stack: Python, scikit-learn/LightGBM, FastAPI, Pydantic, SQLite, React (Vite) with a router. Data comes from the TMDB API, with the Kaggle TMDB 5000 dataset as a fallback for older films.
 
 ## Planned layout
 
@@ -111,7 +119,7 @@ API (Day 8): `POST /predict`, `GET /movies` (search, filter, paginate), `GET /mo
 
 ## ML rules that must hold
 
-- **No target leakage.** Never use `popularity`, `vote_count` or `vote_average` as features; they exist only after release. Director and actor track-record features must be computed **only from films released before the target film**. The plan calls for tests that enforce this rule.
+- **No target leakage.** Never use `popularity`, `vote_count` or `vote_average` as features; they exist only after release. Director and actor track-record features must be computed **only from films released before the target film**. `ml/tests/test_leakage.py` and the feature/API tests enforce this rule.
 - **Time-based split, not random:** train ≤ 2015, validate 2016–2018, test 2019 onward.
 - Always compare against simple baselines (for example, the median per genre) and report the metrics honestly in the README.
 - Revenue is modelled as log-revenue. Ranges come from LightGBM quantile models.

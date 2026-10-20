@@ -11,7 +11,6 @@ This app lets **creators** enter a movie's parameters (genres, runtime, release 
 - **ML:** Python, pandas, scikit-learn, LightGBM
 - **Backend:** FastAPI, Pydantic, SQLite
 - **Frontend:** React (Vite)
-- **Ops:** Docker, docker-compose
 - **Data:** [TMDB API](https://developer.themoviedb.org/) and the Kaggle TMDB 5000 dataset
 
 ## Architecture
